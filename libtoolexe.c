@@ -1,5 +1,10 @@
 /*
  * $Log$
+ * Revision 1.13  2000/12/22 19:52:49  gregames
+ *
+ * buildArchive - create a .libs directory containing a symlink to ../foo.a after
+ * creating the archive
+ *
  * Revision 1.12  2000/11/02 22:28:39  trawick
  * Handle compile options mixed in with the input files.
  *
@@ -1042,15 +1047,17 @@ static int buildArchive(Parms_t *p)
     char *oldPath, *newPath;
 
     rc = mkdir(".libs", 0755);
-    if (!rc)
+    if (rc && errno != EEXIST)
     {
-       oldPath = "../";
-       strcat(oldPath, archiveName);
-       newPath = ".libs/";
-       strcat(newPath, archiveName);
-       
-       rc = symlink(oldPath, newPath);
+       perror("libtoolexe: buildArchive: mkdir");
+       exit(rc);
     }
+    oldPath = "../";
+    strcat(oldPath, archiveName);
+    newPath = ".libs/";
+    strcat(newPath, archiveName);
+       
+    rc = symlink(oldPath, newPath);
   }
 
   if (!rc)
