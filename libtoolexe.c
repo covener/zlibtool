@@ -1,5 +1,10 @@
 /*
  * $Log$
+ * Revision 1.30  2002/01/13 01:33:22  trawick
+ * get rid of code that added pragma runopts to the start of main.c
+ *
+ * it is no longer necessary now that apachectl sets _CEE_RUNOPTS
+ *
  * Revision 1.29  2001/08/23 22:18:52  trawick
  * initial support for external install programs
  *
@@ -273,6 +278,7 @@ typedef struct Parms_t
   unsigned int avoidVersion : 1;
   unsigned int showVersion : 1;
   unsigned int buildingDll : 1;
+  unsigned int linkStatic : 1;
 #if SUPPORT_DLL_SPLIT
   const char *main_obj;
   const char *core_dll;
@@ -490,6 +496,7 @@ static void dumpParms(Parms_t *p)
          p->fromShlibtool ? "shlibtool "      : "",
          p->silent        ? "silent "         : "",
          p->exportDynamic ? "export-dynamic " : "",
+         p->linkStatic    ? "static "         : "",
          p->module        ? "module "         : "",
          p->showVersion   ? "show-version "   : "",
          p->avoidVersion  ? "avoid-version "  : "");
@@ -1715,6 +1722,11 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
     else if (!strcmp(argv[curArg],"-export-dynamic")) 
     {
       p->exportDynamic = 1;
+    }
+    else if (!strcmp(argv[curArg],"-static"))
+    {
+      p->linkStatic = 1;
+      fprintf(stderr,"warning: -static option ignored\n");
     }
     else
     {
