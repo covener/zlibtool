@@ -1,5 +1,8 @@
 /*
  * $Log$
+ * Revision 1.16  2000/12/28 22:01:29  trawick
+ * ignore EEXIST errors from symlink()
+ *
  * Revision 1.15  2000/12/22 21:59:45  gregames
  *
  * prevent possible storage overlay
@@ -90,6 +93,8 @@ static const char rcsid[] = "$Id$";
 
 #include <sys/wait.h>
 #include <sys/stat.h>
+
+#define OS390_BUILD      1
 
 #define PGM "libtoolexe"
 
@@ -359,10 +364,13 @@ static int editInputFile(const char *inputFile)
   if (debug)
     printf("editInputFile(%s)\n",inputFile);
 
-  if (!strcmp(inputFile,"http_main.c"))
+#if OS390_BUILD
+  /* XXX hack away! */
+  if (!strcmp(inputFile,"main.c"))
   {
     rc = insertLine(inputFile,"#pragma runopts(STACK(,,ANY))");
   }
+#endif
 
   return rc;
 }
