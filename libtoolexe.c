@@ -1,5 +1,8 @@
 /*
  * $Log$
+ * Revision 1.18  2001/01/04 20:10:57  trawick
+ * fix references to http_main in the code which handles a DLL build
+ *
  * Revision 1.17  2001/01/04 19:51:35  trawick
  * Fix the hack which adds runopts(STACK(,,ANY)) to the file with main().
  * The name of that file changed from http_main.c to main.c.
@@ -974,12 +977,36 @@ static int buildExe(Parms_t *p)
   return rc;
 }
 
+static int makeTimestamp(Parms_t *p,const char *inputFile)
+{
+  int rc = 0;
+  char filename[200];
+  char *extension;
+  Cmdline_t c = {0};
+
+  assert(strlen(inputFile) + 1 < sizeof(filename));
+  strcpy(filename,inputFile);
+  extension = filename + strlen(filename) - strlen(".c");
+  if (strcmp(extension,".c"))
+  {
+    fprintf(stderr,
+            "program failure at %d: filename `%s', extension `%s'\n",
+            __LINE__,filename,extension);
+    exit(1);
+  }
+  strcpy(extension,".lo");
+  addArg(&c,"echo timestamp >");
+  addArg(&c,filename);
+  rc = runCmd(p,&c);
+  return rc;
+}
+
 static int compile(Parms_t *p)
 {
   int rc = 0;
   int curArg;
   Cmdline_t c = {0};
-  const char *extraCflags;
+  const char *extraCflags, *realInput;
 
   extraCflags = getenv("LIBTOOL_CFLAGS");
 
@@ -1007,6 +1034,7 @@ static int compile(Parms_t *p)
 	  addArg(&c,p->args[curArg].s);
 	  break;
 	default:
+          realInput = p->args[curArg].realInput;
           rc = editInputFile(p->args[curArg].realInput);
           if (rc)
           {
@@ -1027,6 +1055,11 @@ static int compile(Parms_t *p)
   if (!rc)
   {
     rc = runCmd(p,&c);
+  }
+
+  if (!rc)
+  {
+    rc = makeTimestamp(p,realInput);
   }
 
   return rc;
