@@ -1775,7 +1775,17 @@ static int install2(Parms_t *p)
 static void updateFnameForInstall(Larchive_t *la)
 {
   char *dotPos;
+  /*
+   * note: when called to install a library like
+   *            libtoolexe --mode=install libapr.la /my/path/to/libs
+   *       the sharedLib field may not be set and we'll need to use the
+   *       fname field as the library name
+   */
+  char *old_sharedLib = la->sharedLib;
 
+  if (!la->sharedLib) {
+    la->sharedLib = la->fname;
+  }
   /* a little bigger than necessary, but who wants to bother omitting the bytes for
    * the file extension of la->sharedLib?
    */
@@ -1788,10 +1798,15 @@ static void updateFnameForInstall(Larchive_t *la)
   strcat(la->fname, la->sharedLib);
   /* now, replace file extension of path we just built with ".la" */
   dotPos = strrchr(la->fname, '.');
-  assert(dotPos);
+  if (!dotPos) {
+    fprintf(stderr, "about to die; can't find dot in '%s'\n", la->fname);
+    dumpLarchive(la); 
+    assert(dotPos);
+  }
   strcpy(dotPos, ".la");
   if (debug >= DEBUG_GORY_DETAILS)
     dumpLarchive(la);
+  la->sharedLib = old_sharedLib;
 }
 
 static int install(Parms_t *p)
