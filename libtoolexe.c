@@ -1,5 +1,9 @@
 /*
  * $Log$
+ * Revision 1.6  2000/08/18 14:27:13  trawick
+ * Use "apachecore.dll" instead of "httpdcore.dll" to be more consistent with
+ * Win32.
+ *
  * Revision 1.5  2000/08/15 17:25:49  trawick
  * Fix some bugs where ignored input files (e.g., *.h) were not
  * really ignored, and a NULL .realInput field was accessed.
@@ -60,7 +64,9 @@ FILE *debugf;
 
 #define MAX_ARGS 200
 
-#define CORE_DLL "apachecore.dll"
+#define CORE_BASENAME     "apachecore"
+#define CORE_DLL          CORE_BASENAME ".dll"
+#define CORE_X            CORE_BASENAME ".x"
 
 typedef struct
 {
@@ -755,7 +761,7 @@ static int buildMain(Parms_t *p)
   if (!rc)
   {
     memset(&c,0,sizeof(c));
-    addArg(&c,"cc -g -Wl,DLL -o httpd main/http_main.o " CORE_DLL);
+    addArg(&c,"cc -g -Wl,DLL -o httpd main/http_main.o " CORE_X);
   }
 
   if (!rc)
@@ -1148,7 +1154,7 @@ static int install(Parms_t *p)
     addArg(&c," ");
     ++cur;
   }
-  addArg(&c,"../../" CORE_DLL);
+  addArg(&c,"../../" CORE_X);
 
   rc = runCmd(p,&c);
 
