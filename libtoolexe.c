@@ -1,5 +1,10 @@
 /*
  * $Log$
+ * Revision 1.12  2000/11/02 22:28:39  trawick
+ * Handle compile options mixed in with the input files.
+ *
+ * TODO: Give every argument an input type.
+ *
  * Revision 1.11  2000/10/31 22:02:52  trawick
  * As we build command lines via addArg(), escape any shell metacharacters.
  * This fixes a nasty bug found by Ovies Brabson.
@@ -1029,6 +1034,24 @@ static int buildArchive(Parms_t *p)
   }
 
   rc = runCmd(p,&c);
+
+  /* now add a .libs directory, and create a symlink in it to foo.a */
+  
+  if (!rc)
+  {
+    char *oldPath, *newPath;
+
+    rc = mkdir(".libs", 0755);
+    if (!rc)
+    {
+       oldPath = "../";
+       strcat(oldPath, archiveName);
+       newPath = ".libs/";
+       strcat(newPath, archiveName);
+       
+       rc = symlink(oldPath, newPath);
+    }
+  }
 
   if (!rc)
   {
