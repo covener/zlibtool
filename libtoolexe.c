@@ -1,5 +1,11 @@
 /*
  * $Log$
+ * Revision 1.29  2001/08/23 22:18:52  trawick
+ * initial support for external install programs
+ *
+ * we probably need to fix up .la parameters, but
+ * no time for that now
+ *
  * Revision 1.28  2001/05/15 17:46:49  trawick
  * fix some of the split-dll support so that it uses the --main-obj=foo
  * parameter instead of hard-coding main.o... we were also checking for
@@ -391,117 +397,6 @@ static int readCfgFile(void)
     }
     fclose(cfg);
   }
-  return rc;
-}
-
-static int insertLine(const char *fname,const char *text)
-{
-  int rc = 0, done = 0;
-  FILE *new = NULL, *old = NULL;
-  const char *tmpname = "libtool.tmp";
-
-  if (!rc)
-  {
-    new = fopen(tmpname,"w");
-    if (!new)
-    {
-      fprintf(stderr,"couldn't create %s: %s\n",tmpname,strerror(errno));
-      rc = 1;
-    }
-  }
-
-  if (!rc)
-  {
-    old = fopen(fname,"r");
-    if (!old)
-    {
-      fprintf(stderr,"couldn't open %s: %s\n",fname,strerror(errno));
-      rc = 1;
-    }
-  }
-
-  if (!rc)
-  {
-    char inbuf[1024];
-
-    if (fgets(inbuf,sizeof inbuf,old))
-    {
-      if (strstr(inbuf,text))
-      {
-        if (debug)
-          printf("already patched...\n");
-        done = 1;
-      }
-      else
-        rewind(old);
-    }
-  }
-
-  if (!rc && !done)
-  {
-    fprintf(new,"%s\n",text);
-    /* fprintf(new,"#line 1 \"%s\"\n",fname); */
-    while (!feof(old) && !ferror(old) && !ferror(new))
-    {
-      char inbuf[1024];
-      const char *inputline = fgets(inbuf,sizeof inbuf,old);
-
-      if (inputline)
-      {
-        fprintf(new,"%s",inbuf);
-      }
-    }    
-    if (ferror(old) || ferror(new))
-    {
-      fprintf(stderr,"Disk I/O error: %s\n",strerror(errno));
-      rc = 1;
-    }
-  }
-
-  if (new)
-    fclose(new);
-
-  if (old)
-    fclose(old);
-
-  if (!rc && !done)
-  {
-    rc = unlink(fname);
-    if (rc)
-    {
-      rc = 1;
-      fprintf(stderr,"remove %s: %s\n",fname,strerror(errno));
-    }
-  }
-
-  if (!rc && !done)
-  {
-    rc = rename(tmpname,fname); 
-    if (rc)
-    {
-      rc = 1;
-      fprintf(stderr,"rename %s to %s: %s\n",tmpname,fname,strerror(errno));
-    }
-  }
-
-  return rc;
-}
-
-static int editInputFile(const char *inputFile)
-{
-  int rc = 0;
-
-  if (debug)
-    printf("editInputFile(%s)\n",inputFile);
-
-#if OS390_BUILD
-  /* XXX hack away! */
-  if (!strcmp(inputFile,"main.c"))
-  {
-    rc = insertLine(inputFile,"#pragma runopts(STACK(,,ANY))");
-  }
-#endif
-
   return rc;
 }
 
@@ -1526,14 +1421,6 @@ static int compile(Parms_t *p)
 	    break;
 	  default:
         realInput = p->args[curArg].realInput;
-        rc = editInputFile(p->args[curArg].realInput);
-        if (rc)
-        {
-          fprintf(stderr,
-                  PGM ": editInputFile(%s)->%d\n",
-                  p->args[curArg].realInput,rc);
-          exit(rc);
-        }
         addArg(&c,p->args[curArg].realInput);
 	}
     addArg(&c," ");
@@ -2134,13 +2021,6 @@ int main(int argc,char **argv)
               modeStr(parms.mode),outputTypeStr(parms.outputType));
       exit(999);
   }
-
-#ifdef OLD
-      /* normal command was done here */
-      if (!rc)
-        rc = runCmds(target);
-      exit(rc);
-#endif
 
   if (rc)
     fprintf(stderr,PGM ": returning error code %d...\n",rc);
