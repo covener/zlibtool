@@ -457,6 +457,10 @@ static void _addArg(Cmdline_t *c,const char *add, int escape)
 {
   size_t addLen;
 
+  if (debug >= DEBUG_GORY_DETAILS)
+    fprintf(stderr, "_addArg(,%s,%d)\n",
+            add, escape);
+
   if (escape)
     add = escapeArg(add);
 
@@ -893,6 +897,10 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
     char curdir[1024];
     char curname[1024];
 
+    if (debug >= DEBUG_GORY_DETAILS)
+      fprintf(stderr,
+              "building main executable + special dll\n");
+
     dirPrefix = getDirPrefix(a->s);
     getcwd(curdir, sizeof curdir - 1);
 
@@ -1053,6 +1061,7 @@ static int buildMain(Parms_t *p)
   int rc = 0;
   int orc;
   Cmdline_t c = {0};
+  Cmdline_t linkMainCmd = {0};
   int curArg;
   const char *extraLflags;
   char *core_x;
@@ -1074,9 +1083,17 @@ static int buildMain(Parms_t *p)
     {
       addArg(&c,extraLflags);
       addArg(&c," ");
+      /* We need to use same options on the link of the main executable.
+       */
+      addArg(&linkMainCmd,extraLflags);
+      addArg(&linkMainCmd," ");
     }
     addArg(&c,p->args[curArg].s);
     addArg(&c," ");
+    /* We need to use same options on the link of the main executable.
+     */
+    addArg(&linkMainCmd,p->args[curArg].s);
+    addArg(&linkMainCmd," ");
     ++curArg;
   }
 
@@ -1118,6 +1135,10 @@ static int buildMain(Parms_t *p)
         addArg(&c," ");
         if (!strcmp(p->args[curArg].s,"-g"))
           debug = 1;
+        /* We need to use same options on the link of the main executable.
+         */
+        addArg(&linkMainCmd,p->args[curArg].s);
+        addArg(&linkMainCmd," ");
         break;
       default:
         fprintf(stderr,"Unexpected input type %d at %d\n",
@@ -1131,28 +1152,13 @@ static int buildMain(Parms_t *p)
 
   if (!rc)
   {
-    memset(&c,0,sizeof(c));
-    addArg(&c,"cc ");
-    if (extraLflags)
-    {
-      addArg(&c,extraLflags);
-      addArg(&c," ");
-    }
-    if (debug)
-    {
-      addArg(&c,"-g ");
-    }
-    addArg(&c,"-Wl,DLL -o ");
-    addArg(&c,"httpd");
-    addArg(&c," ");
-    addArg(&c,p->main_obj);
-    addArg(&c," ");
-    addArg(&c,core_x);
-  }
-
-  if (!rc)
-  {
-    rc = runCmd(p,&c);
+    addArg(&linkMainCmd,"-Wl,DLL -o ");
+    addArg(&linkMainCmd,"httpd");
+    addArg(&linkMainCmd," ");
+    addArg(&linkMainCmd,p->main_obj);
+    addArg(&linkMainCmd," ");
+    addArg(&linkMainCmd,core_x);
+    rc = runCmd(p,&linkMainCmd);
   }
 
   return rc;
@@ -1285,17 +1291,29 @@ static int compile(Parms_t *p)
     {
       case INPUT_IS_IGNORED:
         break;
-	  case INPUT_IS_OPTION:
+      case INPUT_IS_OPTION:
         if (strstr(p->args[curArg].s,"c++")){
           addArg(&c,"gcc");
-        } else {
+        } 
+        else {
           addArg(&c,p->args[curArg].s);
-	    }
-	    break;
-	  default:
+	}
+	break;
+      case INPUT_IS_TARGET:
+        /* this is the foo.lo from "-o foo.lo" */
+        {
+          char buf[128];
+          strncpy(buf, p->args[curArg].s, sizeof(buf) - 1);
+          buf[sizeof(buf) - 1] = '\0';
+          buf[strlen(buf) - 2] = 'o';
+          buf[strlen(buf) - 1] = '\0';
+          addArg(&c, buf);
+        }
+        break; 
+      default:
         realInput = p->args[curArg].realInput;
         addArg(&c,p->args[curArg].realInput);
-	}
+    }
     addArg(&c," ");
     ++curArg;
   }
@@ -1635,6 +1653,11 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
         if (!strcmp(p->target + targetLen - 3,".la"))
         {
           p->outputType = OUTPUT_IS_ARCHIVE;
+        }
+        else if (!strcmp(p->target + targetLen - 3,".lo"))
+        {
+          p->outputType = OUTPUT_IS_OBJ;
+          p->args[p->numArgs - 2].inputType = INPUT_IS_OPTION;
         }
         else
           p->outputType = OUTPUT_IS_EXE;
