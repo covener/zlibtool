@@ -1,5 +1,10 @@
 /*
  * $Log$
+ * Revision 1.28  2001/05/15 17:46:49  trawick
+ * fix some of the split-dll support so that it uses the --main-obj=foo
+ * parameter instead of hard-coding main.o... we were also checking for
+ * main.o when building a .so, and that isn't needed...
+ *
  * Revision 1.27  2001/05/15 17:21:34  trawick
  * OS/390 changes:
  * . Add logic to split off main() from the rest of the executable, yielding
@@ -1988,6 +1993,23 @@ static void _buildCPcommand(Cmdline_t *c, const char * a1, const char *a2)
   addArg(c, a2);
 }
 
+static int install2(Parms_t *p)
+{
+  int curArg;
+  int rc = 0;
+  Cmdline_t cmdline = {0};
+
+  curArg = 0;
+  while (curArg < p->numArgs)
+  {
+    addArg(&cmdline,p->args[curArg].s);
+    addArg(&cmdline," ");
+    ++curArg;
+  }
+  rc = runCmd(p,&cmdline);
+  return rc;
+}
+
 static int install(Parms_t *p)
 {
   int rc = 0;
@@ -1996,6 +2018,11 @@ static int install(Parms_t *p)
   char *so;
   Larchive_t la;
 
+  if (p->numArgs != 3 ||
+      strcmp(p->args[0].s,"cp")) 
+  {
+    return install2(p);
+  }
   assert(p->numArgs == 3);
   assert(!strcmp(p->args[0].s,"cp"));
 
@@ -2004,7 +2031,7 @@ static int install(Parms_t *p)
    *  modify it
    *  write it out
    */
-  if (p->args[1].inputType == INPUT_IS_LARCHIVE){
+  if (p->args[1].inputType == INPUT_IS_LARCHIVE) {
     readLarchive(&la, p->args[1].s);
     la.installPath = strdup(p->args[2].s);
     la.installed = 1;
