@@ -1,5 +1,9 @@
 /*
  * $Log$
+ * Revision 1.14  2000/12/22 20:34:22  gregames
+ * buildArchive - fix error in the previous patch.  If multiple archives are created
+ * in the same directory, we need to handle error from mkdir(".libs")
+ *
  * Revision 1.13  2000/12/22 19:52:49  gregames
  *
  * buildArchive - create a .libs directory containing a symlink to ../foo.a after
@@ -1044,7 +1048,7 @@ static int buildArchive(Parms_t *p)
   
   if (!rc)
   {
-    char *oldPath, *newPath;
+    char oldPath[260], newPath[260];
 
     rc = mkdir(".libs", 0755);
     if (rc && errno != EEXIST)
@@ -1052,9 +1056,9 @@ static int buildArchive(Parms_t *p)
        perror("libtoolexe: buildArchive: mkdir");
        exit(rc);
     }
-    oldPath = "../";
+    strcpy(oldPath, "../");
     strcat(oldPath, archiveName);
-    newPath = ".libs/";
+    strcpy(newPath, ".libs/");
     strcat(newPath, archiveName);
        
     rc = symlink(oldPath, newPath);
