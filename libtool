@@ -1,1 +1,2 @@
+shlibpath_var=LIBPATH
 exec libtoolexe $*
