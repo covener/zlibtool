@@ -1,0 +1,14 @@
+libtool for building Apache 2.0 on OS/390
+
+Installation of this libtool on OS/390:
+
+1) unpack the tarball via pax since the contents are ASCII
+2) make
+3) export LIBTOOL_PREFIX=xxx     (e.g., /usr/local)
+4) make install
+
+Building Apache on OS/390:
+
+1) Please see http://www.apache.org/~trawick/apache-2-on-os390.html
+
+
