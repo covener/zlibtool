@@ -1,5 +1,8 @@
 /*
  * $Log$
+ * Revision 1.23  2001/05/01 18:23:29  trawick
+ * a few changes from David Reid for the PLATFORM string and forward declarations
+ *
  * Revision 1.22  2001/04/30 19:40:19  trawick
  * Teach the install code to let this command-line work:
  *
@@ -129,7 +132,11 @@ static const char rcsid[] = "$Id$";
 #include <sys/wait.h>
 #include <sys/stat.h>
 
+#ifdef __MVS__ /* maybe this is TPF cross-compile? */
 #define OS390_BUILD      1
+#else
+#define OS390_BUILD      0
+#endif
 
 #define PGM "libtoolexe"
 
@@ -160,7 +167,7 @@ FILE *debugf;
 #ifdef __BEOS__
 #define PLATFORM "BeOS"
 #endif
-#ifdef __MVS_
+#if OS390_BUILD
 #define PLATFORM "OS/three-ninety"
 #endif
 #ifndef PLATFORM
@@ -178,6 +185,12 @@ typedef struct
   char *fname;
   int numInputs;
   char *inputs[MAX_INPUTS];
+  char *prefix;
+  char *staticLib;
+  char *sharedLib;
+  char *shLink; /* what we need to pass on the link line... */
+  int installed;
+  char *installPath;
 } Larchive_t;
 
 typedef struct
@@ -185,6 +198,16 @@ typedef struct
   const char *s; 
   /* the following fields are always set if this is an input file */
   const char *realInput;
+  /* Meanings....
+   *    INPUT_IS_OBJ         Normal object (.o)
+   *    INPUT_IS_LOBJ        This is a libtool object (.lo)
+   *    INPUT_IS_ARCHIVE     It's a static archive (.a)
+   *    INPUT_IS_LARCHIVE    It's a libtool archive (.la)
+   *    INPUT_IS_SOURCE      This is a source file (.c or .cc)
+   *    INPUT_IS_IGNORED     Ignore this input (normally .h file)
+   *    NOT_INPUT            This option wasn't an input
+   *    INPUT_IS_OPTION      It's an option
+   */
   enum {INPUT_IS_OBJ = 100, INPUT_IS_LOBJ, INPUT_IS_ARCHIVE,
         INPUT_IS_LARCHIVE, INPUT_IS_SOURCE, INPUT_IS_IGNORED, NOT_INPUT,
         INPUT_IS_OPTION} inputType;
@@ -200,6 +223,7 @@ typedef struct Parms_t
   unsigned int showVersion : 1;
   unsigned int buildingDll : 1;
   const char *target;
+  const char *lt_target;
   const char *rpath;
   const char *version;
   enum {COMPILE=3, LINK, SHOWVERSION, INSTALL, UNKNOWN_MODE} mode;
@@ -1026,8 +1050,12 @@ static int makeTimestamp(Parms_t *p,const char *inputFile)
 
   assert(strlen(inputFile) + 1 < sizeof(filename));
   strcpy(filename,inputFile);
-  extension = filename + strlen(filename) - strlen(".c");
-  if (strcmp(extension,".c"))
+  if (strstr(filename, ".cc")) {
+    extension = filename + strlen(filename) - strlen(".cc");
+  } else {
+    extension = filename + strlen(filename) - strlen(".c");
+  }
+  if (strcmp(extension,".c") && strcmp(extension,".cc"))
   {
     fprintf(stderr,
             "program failure at %d: filename `%s', extension `%s'\n",
@@ -1441,6 +1469,9 @@ static int install(Parms_t *p)
     so = strdup(p->args[1].s);
     strcpy(strstr(so,".la"),".so");
 
+#if OS390_BUILD
+    /* David says this is really bogus... He's right, of course.
+     */
     loadLarchive(&la,p->args[1].s);
 
     addArg(&c,"cc -Wl,DLL -o ");
@@ -1456,6 +1487,7 @@ static int install(Parms_t *p)
     addArg(&c,"../../" CORE_X);
 
     rc = runCmd(p,&c);
+#endif
 
     if (!rc)
     {
