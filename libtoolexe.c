@@ -1,5 +1,9 @@
 /*
  * $Log$
+ * Revision 1.15  2000/12/22 21:59:45  gregames
+ *
+ * prevent possible storage overlay
+ *
  * Revision 1.14  2000/12/22 20:34:22  gregames
  * buildArchive - fix error in the previous patch.  If multiple archives are created
  * in the same directory, we need to handle error from mkdir(".libs")
@@ -1053,8 +1057,8 @@ static int buildArchive(Parms_t *p)
     rc = mkdir(".libs", 0755);
     if (rc && errno != EEXIST)
     {
-       perror("libtoolexe: buildArchive: mkdir");
-       exit(rc);
+      perror("libtoolexe: buildArchive: mkdir");
+      exit(rc);
     }
     strcpy(oldPath, "../");
     strcat(oldPath, archiveName);
@@ -1062,6 +1066,13 @@ static int buildArchive(Parms_t *p)
     strcat(newPath, archiveName);
        
     rc = symlink(oldPath, newPath);
+    if (rc && errno != EEXIST)
+    {
+      perror("libtoolexe: buildArchive: symlink");
+      exit(rc);
+    }
+    else
+      rc = 0;
   }
 
   if (!rc)
