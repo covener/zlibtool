@@ -1,5 +1,9 @@
 /*
  * $Log$
+ * Revision 1.5  2000/08/15 17:25:49  trawick
+ * Fix some bugs where ignored input files (e.g., *.h) were not
+ * really ignored, and a NULL .realInput field was accessed.
+ *
  * Revision 1.4  2000/08/14 14:59:47  trawick
  * Add initial support for building Apache 2.0 dsos.
  *
@@ -55,6 +59,8 @@ static int debug;
 FILE *debugf;
 
 #define MAX_ARGS 200
+
+#define CORE_DLL "apachecore.dll"
 
 typedef struct
 {
@@ -714,7 +720,7 @@ static int buildMain(Parms_t *p)
   ++curArg;
 
   addArg(&c,"-Wl,DLL ");
-  addArg(&c,"-o httpdcore.dll ");
+  addArg(&c,"-o " CORE_DLL " ");
 
   /* Now, process the input files... */
 
@@ -749,7 +755,7 @@ static int buildMain(Parms_t *p)
   if (!rc)
   {
     memset(&c,0,sizeof(c));
-    addArg(&c,"cc -g -Wl,DLL -o httpd main/http_main.o httpdcore.x");
+    addArg(&c,"cc -g -Wl,DLL -o httpd main/http_main.o " CORE_DLL);
   }
 
   if (!rc)
@@ -1142,7 +1148,7 @@ static int install(Parms_t *p)
     addArg(&c," ");
     ++cur;
   }
-  addArg(&c,"../../httpdcore.x");
+  addArg(&c,"../../" CORE_DLL);
 
   rc = runCmd(p,&c);
 
