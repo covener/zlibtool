@@ -1,5 +1,13 @@
 #
 # $Log$
+# Revision 1.4  2000/08/14 14:59:47  trawick
+# Add initial support for building Apache 2.0 dsos.
+#
+# Known problems with this level of code:
+#
+# 1) libtoolexe.c code needs to be split up; too darn big
+# 2) dsos aren't linked until "make install", which is too late
+#
 # Revision 1.3  2000/06/30 14:26:14  trawick
 # Install config.sub and config.guess.
 # Make sure target directories exist.
@@ -38,6 +46,9 @@ install: libtoolexe libtool.m4 libtool libtoolize ltconfig config.guess config.s
 	chmod +x $(LIBTOOL_PREFIX)/share/libtool/config.guess
 	cp -p config.sub $(LIBTOOL_PREFIX)/share/libtool/config.sub
 	chmod +x $(LIBTOOL_PREFIX)/share/libtool/config.sub
+
+clean:
+	rm -f *.o libtoolexe
 
 libtoolexe: libtoolexe.o
 	c89 $(LFLAGS) -o libtoolexe libtoolexe.o
