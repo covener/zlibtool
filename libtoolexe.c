@@ -1,5 +1,16 @@
 /*
  * $Log$
+ * Revision 1.11  2000/10/31 22:02:52  trawick
+ * As we build command lines via addArg(), escape any shell metacharacters.
+ * This fixes a nasty bug found by Ovies Brabson.
+ *
+ * If we don't escape shell metacharacters, the shell will try to interpret
+ * them.  But this is a compiler command line, and parentheses and other such
+ * chars should be passed to the compiler.
+ *
+ * Putting something like "-Wc,LANGLVL(EXTENDED)" on the libtool command-line
+ * now works.
+ *
  * Revision 1.10  2000/08/31 15:04:26  trawick
  * Add back support for editInputFile() processing.  It was lost during the
  * big rewrite of command-line parsing.
@@ -94,7 +105,8 @@ typedef struct
   /* the following fields are always set if this is an input file */
   const char *realInput;
   enum {INPUT_IS_OBJ = 100, INPUT_IS_LOBJ, INPUT_IS_ARCHIVE,
-        INPUT_IS_LARCHIVE, INPUT_IS_SOURCE, INPUT_IS_IGNORED, NOT_INPUT} inputType;
+        INPUT_IS_LARCHIVE, INPUT_IS_SOURCE, INPUT_IS_IGNORED, NOT_INPUT,
+        INPUT_IS_OPTION} inputType;
 } Arg_t;
 
 typedef struct Parms_t
@@ -403,6 +415,8 @@ static const char *inputTypeStr(int type)
       return "SOURCE";
     case INPUT_IS_IGNORED:
       return "(ignored)";
+    case INPUT_IS_OPTION:
+      return "(compiler option)";
   }
   return "(unknown)";
 }
@@ -833,6 +847,10 @@ static int buildMain(Parms_t *p)
       case INPUT_IS_IGNORED:
         /* Skip this; we don't care about it for one reason or another. */
         break;
+      case INPUT_IS_OPTION:
+        addArg(&c,p->args[curArg].s); 
+        addArg(&c," ");
+        break;
       default:
         fprintf(stderr,"Unexpected input type %d at %d\n",
                 p->args[curArg].inputType,__LINE__);
@@ -896,9 +914,15 @@ static int buildExe(Parms_t *p)
       }
       if (curArg >= p->firstInput)
       {
-        if (p->args[curArg].inputType != INPUT_IS_IGNORED)
+        switch(p->args[curArg].inputType)
         {
-          addArg(&c,p->args[curArg].realInput);
+	  case INPUT_IS_IGNORED:
+            break;
+          case INPUT_IS_OPTION:
+            addArg(&c,p->args[curArg].s);
+            break;
+	  default:
+            addArg(&c,p->args[curArg].realInput);
         }
       }
       else
@@ -941,17 +965,23 @@ static int compile(Parms_t *p)
     }
     if (curArg >= p->firstInput)
     {
-      if (p->args[curArg].inputType != INPUT_IS_IGNORED)
+      switch(p->args[curArg].inputType)
       {
-        rc = editInputFile(p->args[curArg].realInput);
-        if (rc)
-        {
-          fprintf(stderr,
-                  PGM ": editInputFile(%s)->%d\n",
-                  p->args[curArg].realInput,rc);
-          exit(rc);
-        }
-        addArg(&c,p->args[curArg].realInput);
+        case INPUT_IS_IGNORED:
+	  break;
+	case INPUT_IS_OPTION:
+	  addArg(&c,p->args[curArg].s);
+	  break;
+	default:
+          rc = editInputFile(p->args[curArg].realInput);
+          if (rc)
+          {
+            fprintf(stderr,
+                    PGM ": editInputFile(%s)->%d\n",
+                    p->args[curArg].realInput,rc);
+            exit(rc);
+          }
+          addArg(&c,p->args[curArg].realInput);
       }
     }
     else
@@ -989,6 +1019,7 @@ static int buildArchive(Parms_t *p)
   curArg = p->firstInput;
   while (curArg < p->numArgs)
   {
+    assert(p->args[curArg].inputType != INPUT_IS_OPTION);
     if (p->args[curArg].inputType != INPUT_IS_IGNORED)
     {
       addArg(&c,p->args[curArg].realInput);
@@ -1016,6 +1047,7 @@ static int buildArchive(Parms_t *p)
     {
       if (p->args[curArg].inputType != INPUT_IS_IGNORED)
       {
+        assert(p->args[curArg].inputType != INPUT_IS_OPTION);
         fprintf(la,"%s ",p->args[curArg].realInput);
       }
       ++curArg;
@@ -1189,8 +1221,11 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
         }
         else
         {
-          fprintf(stderr,"Hmmm... what kind of input is %s?\n",
-                  p->args[p->numArgs - 1].s);
+          /* 
+           * INPUT_IS_OPTION is a kludge for handling options which
+           * come in the middle of the list of input files.
+           */
+          p->args[p->numArgs - 1].inputType = INPUT_IS_OPTION;
         }
       }
       else
