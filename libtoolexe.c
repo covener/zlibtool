@@ -1,5 +1,9 @@
 /*
  * $Log$
+ * Revision 1.25  2001/05/09 18:30:33  trawick
+ * integrate [most of] the rest of David Reid's changes to
+ * make libtool more generic
+ *
  * Revision 1.24  2001/05/01 20:18:42  trawick
  * add some more of David's BeOS port/cleanup
  *
@@ -216,10 +220,11 @@ typedef struct
    *    INPUT_IS_IGNORED     Ignore this input (normally .h file)
    *    NOT_INPUT            This option wasn't an input
    *    INPUT_IS_OPTION      It's an option
+   *    INPUT_IS_TARGET      This option was the build target
    */     
   enum {INPUT_IS_OBJ = 100, INPUT_IS_LOBJ, INPUT_IS_ARCHIVE,
         INPUT_IS_LARCHIVE, INPUT_IS_SOURCE, INPUT_IS_IGNORED, NOT_INPUT,
-        INPUT_IS_OPTION} inputType;
+        INPUT_IS_OPTION, INPUT_IS_TARGET} inputType;
 } Arg_t;
 
 typedef struct Parms_t
@@ -239,7 +244,6 @@ typedef struct Parms_t
   enum {OUTPUT_IS_OBJ=9, OUTPUT_IS_ARCHIVE, OUTPUT_IS_EXE, UNKNOWN_OUTPUT} outputType;
   Arg_t args[MAX_ARGS];
   int numArgs;
-  int firstInput;
 } Parms_t;
 
 static void addCmd(const char *target,const char *cmd)
@@ -493,13 +497,17 @@ static const char *inputTypeStr(int type)
     case INPUT_IS_ARCHIVE:
       return "ARCHIVE";
     case INPUT_IS_LARCHIVE:
-      return "LARCHIVE";
+      return "(Libtool archive)";
     case INPUT_IS_SOURCE:
       return "SOURCE";
     case INPUT_IS_IGNORED:
       return "(ignored)";
     case INPUT_IS_OPTION:
       return "(compiler option)";
+    case INPUT_IS_TARGET:
+      return "(build target)";
+    case NOT_INPUT:
+      return "(not input)";
   }
   return "(unknown)";
 }
@@ -555,17 +563,12 @@ static void dumpParms(Parms_t *p)
          p->module        ? "module "         : "",
          p->showVersion   ? "show-version "   : "",
          p->avoidVersion  ? "avoid-version "  : "");
-  printf("Compiler arguments:\n");
+  printf("Compiler arguments:\n"); /* this is useless now... */
+  printf("Input parameters:\n");
   curArg = 0; 
-  while (curArg < p->firstInput)
-  {
-    printf("\t%s\n",p->args[curArg].s);
-    ++curArg;
-  }
-  printf("Input files:\n");
   while (curArg < p->numArgs)
   {
-    printf("\t%-10s %-40s %s\n",
+    printf("\t%-18s %-50s %s\n",
            inputTypeStr(p->args[curArg].inputType),
            p->args[curArg].s,
            p->args[curArg].realInput ? p->args[curArg].realInput : "N/A");
@@ -719,7 +722,10 @@ static void _addStaticArg(Cmdline_t *c, Larchive_t *la)
     fprintf(debugf, "trying to add static object from %s\n", la->fname);
 
   if (la->installed)
+  {
     addArg(c, la->installPath);
+    addArg(c, "/");
+  }
   else
     addArg(c, la->prefix);
   addArg(c, la->staticLib);
@@ -742,6 +748,13 @@ static void _addSharedArg(Cmdline_t *c, Larchive_t *la, Parms_t *p)
     if (strlen(tmp) == 0)
       strcpy(tmp, ".\0");
     addArg(c, tmp);
+#if BEOS_BUILD
+    /* as we're not installed, add an rpath if we're building an exe... */
+    if (p->outputType == OUTPUT_IS_EXE){
+      addArg(c, " -Xlinker -rpath ");
+      addArg(c, tmp);
+    }
+#endif
   }
   addArg(c, " ");
   addArg(c, "-l");
@@ -769,7 +782,45 @@ static char *_getstrdata(char *line)
     return ptr;
 }
 
-static void  readLarchive(Larchive_t *la, const char *fname)
+static void dumpLarchive(Larchive_t *la)
+{
+  fprintf(debugf,"Libtool archive file %s\n", la->fname);
+  fprintf(debugf,"\tstatic library : %s\n", la->staticLib ? la->staticLib : "(none)");
+  fprintf(debugf,"\tshared library : %s\n", la->sharedLib ? la->sharedLib : "(none)");
+  fprintf(debugf,"\tinstalled      : %s\n", la->installed ? "yes" : "no");
+  fprintf(debugf,"\tinstall path   : %s\n", la->installPath);
+}
+
+static int isLarchiveStatic(Larchive_t *la)
+{
+  /* we return 1 if we have a static library available... */
+  if (la->staticLib)
+    return 1;
+  else
+    return 0;
+}
+
+/* These might be a bit over the top... */
+static void _getLarchiveStatic(char *rv, Larchive_t *la)
+{
+  if (la->installed)
+    strcpy(rv, la->installPath);
+  else
+    strcpy(rv, la->prefix);
+  strcat(rv, la->staticLib);
+}
+
+static void _getLarchiveShared(char *rv, Larchive_t *la)
+{
+  *rv = '\0';
+  if (la->installed)
+    strcpy(rv, la->installPath);
+  else
+    strcpy(rv, la->prefix);
+  strcat(rv, la->sharedLib);
+}
+  
+static void readLarchive(Larchive_t *la, const char *fname)
 {
   FILE *in;
   char *inputline = malloc(100000);
@@ -830,7 +881,6 @@ static void  readLarchive(Larchive_t *la, const char *fname)
             }
             continue;
         }
-        /* David: why didn't your version check for syntax errors? */
         fprintf(stderr,
                 "syntax error in %s: %s\n",
                 fname,inputline);
@@ -878,15 +928,6 @@ static void writeLarchive(Larchive_t *la)
       "libdir='%s'\n"
       "\n", la->installPath ? la->installPath : "");
   fclose(lafile);
-}
-
-static void dumpLarchive(Larchive_t *la)
-{
-  fprintf(debugf,"Libtool archive file %s\n", la->fname);
-  fprintf(debugf,"\tstatic library : %s\n", la->staticLib ? la->staticLib : "(none)");
-  fprintf(debugf,"\tshared library : %s\n", la->sharedLib ? la->sharedLib : "(none)");
-  fprintf(debugf,"\tinstalled      : %s\n", la->installed ? "yes" : "no");
-  fprintf(debugf,"\tinstall path   : %s\n", la->installPath);
 }
 
 static void loadLarchive(Larchive_t *la,const char *fname)
@@ -989,7 +1030,7 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
   assert(a->inputType == INPUT_IS_LARCHIVE);
   if (debug >= DEBUG_GORY_DETAILS)
   {
-    fprintf(debugf,"Adding the list of objects for %s now...\n",
+    fprintf(debugf,"Adding the list of objects for libtool archive %s now...\n",
             a->s);
     dumpLarchive(la);
   }
@@ -1035,19 +1076,7 @@ static int shlibtoolLink(Parms_t *p)
 
   removeFile(intendedSo,1);
 
-  /* build the commands that will result in a shared library being built
-   * on BeOS.
-   */
   curArg = 0;
-  while (curArg < p->numArgs &&
-         strcmp(p->args[curArg].s,"-o"))
-  {
-    addArg(&c,p->args[curArg].s);
-    addArg(&c," ");
-    ++curArg;
-  }
-  curArg += 2;
-
   while (curArg < p->numArgs)
   {
     switch(p->args[curArg].inputType)
@@ -1072,6 +1101,8 @@ static int shlibtoolLink(Parms_t *p)
         addLarchive(&c,&p->args[curArg], p);
         break;
       case INPUT_IS_IGNORED:
+      case NOT_INPUT:
+      case INPUT_IS_TARGET: /* we may have a .la... */
         /* Skip this; we don't care about it for one reason or another. */
         break;
       case INPUT_IS_OPTION:
@@ -1086,8 +1117,7 @@ static int shlibtoolLink(Parms_t *p)
     ++curArg;
   }
 
-#ifdef __BEOS__
-  /* Add the system specific goo for BeOS */
+#if BEOS_BUILD
   addArg(&c," -nostart -o ");
   addArg(&c,intendedSo);
   addArg(&c," -Wl,-soname,");
@@ -1111,7 +1141,7 @@ static int shlibtoolLink(Parms_t *p)
 
 /* david 30 april 2001
  * OK, so this sucks.  It's way too apache specific and shouldn't be needed.
- * Jeff, can't this be done another way???
+ * Jeff:  can't this be done another way???
  *
  * David: I dunno...  The standalone executable file has to have main() and
  *        nothing else, just like on Win32, because that is the way that
@@ -1124,6 +1154,11 @@ static int shlibtoolLink(Parms_t *p)
  *          On OS/390, if mod_rewrite.so needs symbol foo, it won't be
  *          able to find foo in the executable which loads mod_rewrite.so;
  *          foo must be in a DLL.
+ *
+ * Jeff:  BeOS isn't using this code at present, so no problem.  I am a bit
+ *        concerned that it's overly specific.  We might be able to look
+ *        at the apache build process and files to make life a bit easier...
+ * David: will-do, but not at the moment :)
  */
 static int buildMain(Parms_t *p)
 {
@@ -1160,6 +1195,9 @@ static int buildMain(Parms_t *p)
 
   /* Now, process the input files... */
 
+/* NB - you'll need to look at the INPUT_IS_TARGET flag for this
+ * block!
+ */
   while (curArg < p->numArgs)
   {
     switch(p->args[curArg].inputType)
@@ -1176,6 +1214,7 @@ static int buildMain(Parms_t *p)
         addLarchive(&c,&p->args[curArg], p);
         break;
       case INPUT_IS_IGNORED:
+      case NOT_INPUT:
         /* Skip this; we don't care about it for one reason or another. */
         break;
       case INPUT_IS_OPTION:
@@ -1243,24 +1282,23 @@ static int buildExe(Parms_t *p)
         addArg(&c,extraLflags);
         addArg(&c," ");
       }
-      if (curArg >= p->firstInput)
-      {
         switch(p->args[curArg].inputType)
         {
           case INPUT_IS_IGNORED:
             break;
           case INPUT_IS_OPTION:
+          case INPUT_IS_TARGET: /* we don't mung the target... */
             addArg(&c,p->args[curArg].s);
             break;
           case INPUT_IS_LARCHIVE:
             addLarchive(&c, &p->args[curArg], p);
             break;
+          case NOT_INPUT:
+            addArg(&c,p->args[curArg].s);
+            break;
           default:
             addArg(&c,p->args[curArg].realInput);
         }
-      }
-      else
-        addArg(&c,p->args[curArg].s);
       addArg(&c," ");
       ++curArg;
     }
@@ -1325,53 +1363,56 @@ static int compile(Parms_t *p)
       addArg(&c,extraCflags);
       addArg(&c," ");
     }
-    if (curArg >= p->firstInput)
+    switch(p->args[curArg].inputType)
     {
-      switch(p->args[curArg].inputType)
-      {
-        case INPUT_IS_IGNORED:
-	  break;
-	case INPUT_IS_OPTION:
-	    addArg(&c,p->args[curArg].s);
-	  break;
-	default:
-          realInput = p->args[curArg].realInput;
-          rc = editInputFile(p->args[curArg].realInput);
-          if (rc)
-          {
-            fprintf(stderr,
-                    PGM ": editInputFile(%s)->%d\n",
-                    p->args[curArg].realInput,rc);
-            exit(rc);
-          }
-          addArg(&c,p->args[curArg].realInput);
-      }
-    }
-    else {
-      if (strstr(p->args[curArg].s,"c++")){
-        addArg(&c,"gcc");
-      } else {
-      addArg(&c,p->args[curArg].s);
-	  }
+      case INPUT_IS_IGNORED:
+        break;
+	  case INPUT_IS_OPTION:
+        if (strstr(p->args[curArg].s,"c++")){
+          addArg(&c,"gcc");
+        } else {
+          addArg(&c,p->args[curArg].s);
+	    }
+	    break;
+	  default:
+        realInput = p->args[curArg].realInput;
+        rc = editInputFile(p->args[curArg].realInput);
+        if (rc)
+        {
+          fprintf(stderr,
+                  PGM ": editInputFile(%s)->%d\n",
+                  p->args[curArg].realInput,rc);
+          exit(rc);
+        }
+        addArg(&c,p->args[curArg].realInput);
 	}
     addArg(&c," ");
     ++curArg;
   }
 
-#ifdef __BEOS__
+#if BEOS_BUILD
   /* how do we actually know if we need to build PIC code???  Must be some way
    * from the command line.  Need to look at the GNU libtool code for more info.
-   */
-  /* OS/390 note:
+   *
+   * OS/390 note:
    * analogous problem for us is that we need to use special compile flags to
    * export our symbols; I don't think shlibtool is always used in the
    * cases where we need to export our symbols.  For that reason, Apache/APR
    * build is hacked to add the right options...
    * maybe we should change libtool instead to always add the export-symbols
    * option... I don't think it hurts anything
+   *
+   * This doesn't work at present as we're not setting the fromShlibtool
+   * option correctly.
    */
   if (p->fromShlibtool)
     addArg(&c, "-fPIC ");
+#endif
+#if OS390_BUILD
+  /* we don't truly need this unless objects can be put in DLLs, but it never
+   * hurts as far as I can tell
+   */
+  addArg(&c, "-Wc,DLL,EXPORTALL");
 #endif
   
   if (!rc)
@@ -1393,7 +1434,7 @@ static int buildArchive(Parms_t *p)
   int curArg = 0;
   int use_subdir = 0;
   char *archiveName;
-  Cmdline_t c = {0};
+  Cmdline_t c = {0}, cmd = {0};
   Larchive_t larch;
   
   /* turn foo.la into foo.a to create the archive name */
@@ -1421,43 +1462,64 @@ static int buildArchive(Parms_t *p)
     runCmd(p,&cp);
   }  
 
+  /* build ar command-line */
   addArg(&c,AR_ADD_WITH_REPLACE);
   addArg(&c,archiveName);
   addArg(&c," ");
-  curArg = p->firstInput;
+  curArg = 1;
   while (curArg < p->numArgs)
   {
-    if (p->args[curArg].inputType == INPUT_IS_OPTION){
-      if (!strstr(p->args[curArg].s,"-l")){
-        addArg(&c,p->args[curArg].s);
-        addArg(&c," ");
-      }
-    }
-    else if (p->args[curArg].inputType != INPUT_IS_IGNORED)
+    switch (p->args[curArg].inputType)
     {
-      if (! use_subdir){
-        addArg(&c,p->args[curArg].realInput);
-        addArg(&c," ");
-      } else {
-        if (p->args[curArg].realInput != NULL){
-          Cmdline_t cmd = {0};
-          /* OK, so if it's an archive, we expand it into the
-           * temp directory, if it's just an object we copy it into
-           * the directory.  We link against all .o's we find there,
-           * so this may need looking at.
-           */
-          if (p->args[curArg].inputType == INPUT_IS_ARCHIVE){
-            addArg(&cmd,"cd .tmp;ar x ../");
-            addArg(&cmd, p->args[curArg].realInput);
-            addArg(&cmd, ";cd ..");
-          } else {
+      /* BeOS Note.
+       * Now that we're not using the firstInput flag we should really
+       * skip the options as we only need to pass files into ar on BeOS.
+       */
+#if !BEOS_BUILD
+      case INPUT_IS_OPTION:
+        if (strstr(p->args[curArg].s,"-l")){
+          addArg(&c,p->args[curArg].s);
+          addArg(&c," ");
+        }
+        break;
+#endif
+      case INPUT_IS_LARCHIVE:
+        if(!isLarchiveStatic(&(p->args[curArg].arch))){
+          _addSharedArg(&c, &(p->args[curArg].arch), p);
+          break;
+        } else
+          p->args[curArg].inputType = INPUT_IS_ARCHIVE;       
+      case INPUT_IS_ARCHIVE:
+        /* OK, so if it's an archive, we expand it into the
+         * temp directory, if it's just an object we copy it into
+         * the directory.  We link against all .o's we find there,
+         * so this may need looking at.
+         */
+        addArg(&cmd,"cd .tmp;ar x ../");
+        addArg(&cmd, p->args[curArg].realInput);
+        addArg(&cmd, ";cd ..");
+        runCmd(p, &cmd);
+        break;        
+      case INPUT_IS_OBJ:
+      case INPUT_IS_LOBJ:
+        if (! use_subdir){
+          addArg(&c,p->args[curArg].realInput);
+          addArg(&c," ");
+        } else {
+/* This shoulodn't really be needed here...
+          if (p->args[curArg].realInput != NULL){
+*/
             addArg(&cmd, "cp ");
             addArg(&cmd, p->args[curArg].realInput);
             addArg(&cmd, " .tmp");
+            runCmd(p, &cmd);
+/*
           }
-          runCmd(p, &cmd);
+*/
         }
-      }
+        break;
+      default:
+        break;
     }
     ++curArg;
   }
@@ -1474,7 +1536,6 @@ static int buildArchive(Parms_t *p)
   }
   
   /* now add a .libs directory, and create a symlink in it to foo.a */
-  
   if (!rc)
   {
     char oldPath[260], newPath[260];
@@ -1514,7 +1575,6 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
 {
   int rc = 0;
   int curArg;
-  int firstInputSet = 0;
   const char *modeStr;
   enum {NORM, TARGET} state = NORM;
 
@@ -1522,6 +1582,8 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
   curArg = 1;
   while (curArg < argc)
   {
+    p->args[curArg].inputType = NOT_INPUT;
+    
     if (debug >= DEBUG_GORY_DETAILS)
       fprintf(debugf,"arg %d: %s\n",curArg,argv[curArg]);
    
@@ -1548,19 +1610,24 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
       /* david - 23 Apr 2001
        * This may be bogus, but we only set -rpath if we're
        * building shared libraries...
-       */
-      /* 
+       *
+       * 
        * Jeff: Yes, this is bogus :)  But if "-rpath" is always
        * added to the libtool command-line when the compiled
        * object will be build into a shared library then fair
        * enough; we can just rename the fromShlibtool flag to
        * bldSharedObj or similar.
-       */
-      /* Jeff: Oops, -rpath is added when libmm.la is built.
+       *
+       * Jeff: Oops, -rpath is added when libmm.la is built.
        * We don't want a .so from that when doing a static
        * build.  I gotta comment this out for now.
+       *
+       * David: why is MM being built using -rpath?  That seems wrong if
+       *        we're aiming for a static build.
        */
-      /* p->fromShlibtool = 1; */
+#if BEOS_BUILD /* keep from messing up BeOS...  but fix the mm build first */
+       p->fromShlibtool = 1;
+#endif
     }
     else if (!strcmp(argv[curArg],"-version-info"))
     {
@@ -1602,51 +1669,49 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
       p->args[p->numArgs].s = argv[curArg];
       ++p->numArgs;
 
+#if 0
       /* KLUDGE!!! */
       /* hokey way to see if we're doing dll-able code */
       if (strstr(argv[curArg],"-Wc,DLL"))
         p->buildingDll = 1;
       /* END KLUDGE!!! */
+#endif
 
       if (!strcmp(argv[curArg],"-o"))
       {
-        assert(state == NORM);
-        state = TARGET;
-      }
-      else if (state == TARGET)
-      {
-        size_t targetLen = strlen(argv[curArg]);
-
-        state = NORM;
-        p->firstInput = p->numArgs; /* input files come after target */
-        firstInputSet = 1;
-        assert(!p->target);
+        /* Whenever we see a -o the next argument is the target.
+         * Also we default to building executables.  We can't guarentee
+         * what extentions will be used for an executable object as this is
+         * unix, so we just assume it.
+         * Additionally, if we have more than one -o set, then  it's not
+         * an error, stupid, but not an error.  We'll just accept this and
+         * set our target as the final target passed in.
+         */
+        size_t targetLen = strlen(argv[curArg + 1]);
+        curArg++;
+        p->args[p->numArgs].s = argv[curArg];      
+        ++p->numArgs;        
         p->target = argv[curArg];
 
-        /* Figure out what type of target it is. */
+  /* David: You had a comment here about this limiting what
+   * we can build, but I'm not sure if that applied to my
+   * version or your version...
+   *
+   * Jeff:  If this to be more generic then we should be able to build
+   * any extension.  Look at the GNU libtool demo and test code to see
+   * what I mean.  Basically they build .static versions, which we need
+   * to treat as executable :)
+   */
+
         if (!strcmp(p->target + targetLen - 3,".la"))
         {
           p->outputType = OUTPUT_IS_ARCHIVE;
         }
-  /* David: You had a comment here about this limiting what
-   * we can build, but I'm not sure if that applied to my
-   * version or your version...
-   */
-        else if (!strchr(p->target,'.'))
-          p->outputType = OUTPUT_IS_EXE;
         else
-          p->outputType = UNKNOWN_OUTPUT;
-      }
-      else if (p->mode == COMPILE && 
-               !firstInputSet &&
-               curArg == argc - 1)
-      {
-        p->firstInput = p->numArgs - 1;
-        firstInputSet = 1;
-      }
+          p->outputType = OUTPUT_IS_EXE;
 
-      if (firstInputSet && (p->numArgs - 1) >= p->firstInput)
-      {
+        p->args[p->numArgs - 1].inputType = INPUT_IS_TARGET;       
+      } else {
         /* convert foo.lo into foo.o */
         if (strstr(argv[curArg],".lo"))
         {
@@ -1672,8 +1737,13 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
           tmp = strdup(argv[curArg]);
           assert(tmp);
           readLarchive(&(p->args[p->numArgs - 1].arch), tmp);
-          strcpy(tmp + strlen(tmp) - 3,".a");
-          p->args[p->numArgs - 1].realInput = tmp;
+          /* if we have a static object then enter it as our realInput, but
+           * if it's a shared object only, leave it empty.
+           */
+          if (isLarchiveStatic(&(p->args[p->numArgs - 1].arch))){         
+            _getLarchiveStatic(tmp, &(p->args[p->numArgs - 1].arch));
+            p->args[p->numArgs - 1].realInput = tmp;
+          }
         }
         else if (strstr(argv[curArg],".a"))
         {
@@ -1700,8 +1770,6 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
           p->args[p->numArgs - 1].inputType = INPUT_IS_OPTION;
         }
       }
-      else
-        p->args[p->numArgs - 1].inputType = NOT_INPUT;
     }
     ++curArg;
   }
@@ -1711,13 +1779,7 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
   {
     p->mode = SHOWVERSION;
   }
-
-  if (!firstInputSet)
-  {
-    /* no input files specified */
-    p->firstInput = p->numArgs;
-  }
-  
+ 
   return rc;
 }
 
@@ -1762,6 +1824,15 @@ static int version(Parms_t *p)
   return 0;
 }
 
+static void _buildCPcommand(Cmdline_t *c, const char * a1, const char *a2)
+{
+  memset(c,0,sizeof(Cmdline_t));
+  addArg(c, "cp ");
+  addArg(c, a1);
+  addArg(c, " ");
+  addArg(c, a2);
+}
+
 static int install(Parms_t *p)
 {
   int rc = 0;
@@ -1770,16 +1841,27 @@ static int install(Parms_t *p)
   char *so;
   Larchive_t la;
 
-  /* David: I recently taught this to install executables as well as
-   *        .la and .a.  I think that resolves your concern.
-   */
   assert(p->numArgs == 3);
   assert(!strcmp(p->args[0].s,"cp"));
+
+  /* If it's a libtool archive, 
+   *  read it in
+   *  modify it
+   *  write it out
+   */
+  if (p->args[1].inputType == INPUT_IS_LARCHIVE){
+    readLarchive(&la, p->args[1].s);
+    la.installPath = strdup(p->args[2].s);
+    la.installed = 1;
+    writeLarchive(&la);
+  }
 
   if (p->fromShlibtool)
   {
     char *so;
-    Larchive_t la;
+#if OS390_BUILD
+    Larchive_t la390;
+#endif
 
     so = strdup(p->args[1].s);
     strcpy(strstr(so,".la"),".so");
@@ -1787,15 +1869,15 @@ static int install(Parms_t *p)
 #if OS390_BUILD
     /* David says this is really bogus... He's right, of course.
      */
-    loadLarchive(&la,p->args[1].s);
+    loadLarchive(&la390,p->args[1].s);
 
     addArg(&c,"cc -Wl,DLL -o ");
     addArg(&c,so);
     addArg(&c," ");
     cur = 0;
-    while (cur < la.numInputs)
+    while (cur < la390.numInputs)
     {
-      addArg(&c,la.inputs[cur]);
+      addArg(&c,la390.inputs[cur]);
       addArg(&c," ");
       ++cur;
     }
@@ -1806,12 +1888,7 @@ static int install(Parms_t *p)
 
     if (!rc)
     {
-      memset(&c,0,sizeof(c));
-      addArg(&c,"cp ");
-      addArg(&c,so);
-      addArg(&c," ");
-      addArg(&c,p->args[2].s);
-
+      _buildCPcommand(&c, so, p->args[2].s);
       rc = runCmd(p,&c);
     }
   }
@@ -1823,27 +1900,24 @@ static int install(Parms_t *p)
      * the target directory
      */
 
-    a = (char *)malloc(strlen(p->args[1].s) + strlen(".libs/"));
-    strcpy(a,".libs/");
-    strcat(a,p->args[1].s);
-    strcpy(strstr(a,".la"),".a");
-
-    addArg(&c,"cp ");
-    addArg(&c,p->args[1].s);
-    addArg(&c," ");
-    addArg(&c,p->args[2].s);
+    _buildCPcommand(&c, p->args[1].s, p->args[2].s);
     rc = runCmd(p,&c);
+      
+    if (p->args[1].inputType == INPUT_IS_LARCHIVE){
+      if (la.staticLib && la.sharedLib){
+        _buildCPcommand(&c, la.sharedLib, p->args[2].s);
+        runCmd(p,&c);
+        _buildCPcommand(&c, la.staticLib, p->args[2].s);
+        runCmd(p,&c);
 
-    if (!rc)
-    {
-      memset(&c,0,sizeof(c));
-      addArg(&c,"cp ");
-      addArg(&c,a);
-      addArg(&c," ");
-      addArg(&c,p->args[2].s);
-
-      rc = runCmd(p,&c);
-    }
+      } else if (la.staticLib){
+        _buildCPcommand(&c, la.staticLib, p->args[2].s);
+        runCmd(p,&c);
+      }else{
+        _buildCPcommand(&c, la.sharedLib, p->args[2].s);
+        runCmd(p,&c);
+      }
+    }        
   }
   
   return rc;
@@ -1855,14 +1929,14 @@ int main(int argc,char **argv)
   Parms_t parms = {0};
 
   debugf = stdout;
-  debug = getenv("LIBTOOLDEBUG") != NULL;
+  debug = getenv("LIBTOOL_DEBUG") != NULL;
   if (debug)
-    debug = atoi(getenv("LIBTOOLDEBUG"));
+    debug = atoi(getenv("LIBTOOL_DEBUG"));
 
   if (argc == 1)
   {
     fprintf(stderr,
-            PGM ": Please run OS/390 libtool with some parameters!\n");
+            PGM ": Please run " PLATFORM " libtool with some parameters!\n");
     exit(1);
   }
 
