@@ -1,5 +1,16 @@
 /*
  * $Log$
+ * Revision 1.26  2001/05/14 18:17:45  trawick
+ * a fair number of changes from David Reid to:
+ * . clean up categorization of input parms, getting rid of the firstInput field
+ * . BeOS fixes
+ * . fix an OS/390-specific error message
+ *
+ * changes from Jeff to
+ * . export symbols from all objects on OS/390 so we can eliminate the need for
+ *   this special logic in Apache and APR
+ * . rename LIBTOOLDEBUG environment variable to LIBTOOL_DEBUG
+ *
  * Revision 1.25  2001/05/09 18:30:33  trawick
  * integrate [most of] the rest of David Reid's changes to
  * make libtool more generic
@@ -144,6 +155,7 @@ static const char rcsid[] = "$Id$";
 #define BEOS_BUILD       1
 #define OS390_BUILD      0
 #define AR_ADD_WITH_REPLACE    "ar crs "
+#define SUPPORT_DLL_SPLIT 0
 #endif
 
 #ifdef __MVS__
@@ -154,6 +166,9 @@ static const char rcsid[] = "$Id$";
 #define BEOS_BUILD       0
 #define OS390_BUILD      1
 #define AR_ADD_WITH_REPLACE    "ar -rs "
+/* we support splitting main() from the rest of the code 
+ * to get a small executable plus a big dll. */
+#define SUPPORT_DLL_SPLIT 1
 #endif
 
 #ifndef PLATFORM
@@ -181,10 +196,6 @@ static int debug;
 FILE *debugf;
 
 #define MAX_ARGS 200
-
-#define CORE_BASENAME     "apachecore"
-#define CORE_DLL          CORE_BASENAME ".dll"
-#define CORE_X            CORE_BASENAME ".x"
 
 /* Forward declarations.... */
 
@@ -236,6 +247,10 @@ typedef struct Parms_t
   unsigned int avoidVersion : 1;
   unsigned int showVersion : 1;
   unsigned int buildingDll : 1;
+#if SUPPORT_DLL_SPLIT
+  const char *main_obj;
+  const char *core_dll;
+#endif
   const char *target;
   const char *lt_target;
   const char *rpath;
@@ -881,6 +896,32 @@ static void readLarchive(Larchive_t *la, const char *fname)
             }
             continue;
         }
+        if (!memcmp(inputline,"input:",6))
+        {
+          ch = inputline + 6;
+          while (*ch)
+          {
+            if (isspace(*ch))
+              ++ch;
+            else
+            {
+              la->inputs[la->numInputs] = ch;
+              ++la->numInputs;
+              tmpch = strchr(ch,' ');
+              if (tmpch)
+              {
+                *tmpch = '\0';
+                ch = tmpch + 1;
+              }
+              else
+                ch = ch + strlen(ch);
+              /* Now, make a copy... */
+              la->inputs[la->numInputs - 1] =
+                strdup(la->inputs[la->numInputs - 1]);
+            }
+          }
+        }
+        continue;
         fprintf(stderr,
                 "syntax error in %s: %s\n",
                 fname,inputline);
@@ -895,6 +936,7 @@ static void readLarchive(Larchive_t *la, const char *fname)
 static void writeLarchive(Larchive_t *la)
 {
   FILE *lafile;
+  int curInput;
 
   if (debug >= DEBUG_GORY_DETAILS)
     fprintf(debugf, "Writing the libtool archive file %s\n", la->fname);
@@ -927,6 +969,19 @@ static void writeLarchive(Larchive_t *la)
       "# Directory that this library needs to be installed in\n"
       "libdir='%s'\n"
       "\n", la->installPath ? la->installPath : "");
+
+  if (la->numInputs > 0)
+  {
+    fprintf(lafile,"input:");
+    curInput = 0;
+    while (curInput < la->numInputs)
+    {
+      fprintf(lafile,"%s ",la->inputs[curInput]);
+      ++curInput;
+    }
+    fprintf(lafile,"\n");
+  }
+
   fclose(lafile);
 }
 
@@ -1038,6 +1093,40 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
   /* serious problem if at least one of these isn't set */
   assert(la->staticLib || la->sharedLib);
 
+#if SUPPORT_DLL_SPLIT
+  if (p->main_obj) /* building main executable + special dll */
+  {
+    /* unfortunately, we need to provide the names of the .o files on the
+     * link invocation so that apachecore.x is built;
+     * when we put .a files on the link invocation the linker will only
+     * search for code in them needed by the .o files; it won't blindly
+     * include the code in the .a in the file being built
+     */
+
+    int cur;
+    char *dirPrefix;
+
+    dirPrefix = getDirPrefix(a->s);
+    cur = 0;
+    while (cur < la->numInputs)
+    {
+      /* hackola! */
+      if (!strcmp(la->inputs[cur],"main.o"))
+      {
+        /* don't put main.o in the dll; it is stand-alone */
+      }
+      else
+      {
+        addArg(c,dirPrefix);
+        addArg(c,la->inputs[cur]);
+        addArg(c," ");
+      }
+      ++cur;
+    } 
+    return;
+  }
+#endif /* SUPPORT_DLL_SPLIT */
+
   /* we only have a static library... */
   if (la->staticLib && !la->sharedLib) {
       _addStaticArg(c, la);
@@ -1077,6 +1166,18 @@ static int shlibtoolLink(Parms_t *p)
   removeFile(intendedSo,1);
 
   curArg = 0;
+
+#if OS390_BUILD
+  addArg(&c,p->args[curArg].s);
+  addArg(&c," ");
+  ++curArg;
+
+  addArg(&c,"-Wl,DLL ");
+  addArg(&c,"-o ");
+  addArg(&c,intendedSo);
+  addArg(&c," ");
+#endif
+
   while (curArg < p->numArgs)
   {
     switch(p->args[curArg].inputType)
@@ -1123,6 +1224,17 @@ static int shlibtoolLink(Parms_t *p)
   addArg(&c," -Wl,-soname,");
   addArg(&c,intendedSo);
 #endif
+#if SUPPORT_DLL_SPLIT
+  if (p->core_dll)
+  {
+    char *core_x;
+
+    core_x = strdup(p->core_dll);
+    strcpy(strstr(core_x,".dll"),".x");
+
+    addArg(&c,core_x);
+  }
+#endif /* SUPPORT_DLL_SPLIT */
 
   /* Run the command and make a library!! */
   rc = runCmd(p,&c);
@@ -1139,27 +1251,7 @@ static int shlibtoolLink(Parms_t *p)
   return rc;
 }
 
-/* david 30 april 2001
- * OK, so this sucks.  It's way too apache specific and shouldn't be needed.
- * Jeff:  can't this be done another way???
- *
- * David: I dunno...  The standalone executable file has to have main() and
- *        nothing else, just like on Win32, because that is the way that
- *        DLLs work.
- *
- *        If everything else from the normal static httpd is not in 
- *        apachecore.dll then loaded DSOs can't find the symbols.
- *
- *        In other words:
- *          On OS/390, if mod_rewrite.so needs symbol foo, it won't be
- *          able to find foo in the executable which loads mod_rewrite.so;
- *          foo must be in a DLL.
- *
- * Jeff:  BeOS isn't using this code at present, so no problem.  I am a bit
- *        concerned that it's overly specific.  We might be able to look
- *        at the apache build process and files to make life a bit easier...
- * David: will-do, but not at the moment :)
- */
+#if SUPPORT_DLL_SPLIT
 static int buildMain(Parms_t *p)
 {
   int rc = 0;
@@ -1167,6 +1259,12 @@ static int buildMain(Parms_t *p)
   Cmdline_t c = {0};
   int curArg;
   const char *extraLflags;
+  char *core_x;
+  int debug = 0;
+
+  assert(p->core_dll);
+  core_x = strdup(p->core_dll);
+  strcpy(strstr(core_x,".dll"),".x");
 
   extraLflags = getenv("LIBTOOL_LFLAGS");
 
@@ -1191,7 +1289,9 @@ static int buildMain(Parms_t *p)
   ++curArg;
 
   addArg(&c,"-Wl,DLL ");
-  addArg(&c,"-o " CORE_DLL " ");
+  addArg(&c,"-o ");
+  addArg(&c,p->core_dll);
+  addArg(&c," ");
 
   /* Now, process the input files... */
 
@@ -1220,6 +1320,8 @@ static int buildMain(Parms_t *p)
       case INPUT_IS_OPTION:
         addArg(&c,p->args[curArg].s); 
         addArg(&c," ");
+        if (!strcmp(p->args[curArg].s,"-g"))
+          debug = 1;
         break;
       default:
         fprintf(stderr,"Unexpected input type %d at %d\n",
@@ -1240,7 +1342,16 @@ static int buildMain(Parms_t *p)
       addArg(&c,extraLflags);
       addArg(&c," ");
     }
-    addArg(&c,"-g -Wl,DLL -o httpd server/main.o " CORE_X);
+    if (debug)
+    {
+      addArg(&c,"-g ");
+    }
+    addArg(&c,"-Wl,DLL -o ");
+    addArg(&c,"httpd");
+    addArg(&c," ");
+    addArg(&c,p->main_obj);
+    addArg(&c," ");
+    addArg(&c,core_x);
   }
 
   if (!rc)
@@ -1250,63 +1361,61 @@ static int buildMain(Parms_t *p)
 
   return rc;
 }
+#endif /* SUPPORT_DLL_SPLIT */
 
 static int buildExe(Parms_t *p)
 {
   int rc = 0;
+  Cmdline_t c = {0};
+  int curArg;
+  const char *extraLflags;
 
   assert(p->mode == LINK);
   assert(p->outputType == OUTPUT_IS_EXE);
 
-  if (p->buildingDll && !strcmp(p->target,"httpd"))
+#if SUPPORT_DLL_SPLIT
+  if (p->main_obj)
+    return buildMain(p);
+#endif /* SUPPORT_DLL_SPLIT */
+
+  /*
+   * simple link-edit: just run the specified command
+   */
+
+  extraLflags = getenv("LIBTOOL_LFLAGS");
+
+  curArg = 0;
+  while (curArg < p->numArgs)
   {
-    rc = buildMain(p);
-  }
-  else
-  {
-    /*
-     * simple link-edit: just run the specified command
-     */
-
-    Cmdline_t c = {0};
-    int curArg;
-    const char *extraLflags;
-
-    extraLflags = getenv("LIBTOOL_LFLAGS");
-
-    curArg = 0;
-    while (curArg < p->numArgs)
+    if (curArg == 1 && extraLflags)
     {
-      if (curArg == 1 && extraLflags)
-      {
-        addArg(&c,extraLflags);
-        addArg(&c," ");
-      }
-        switch(p->args[curArg].inputType)
-        {
-          case INPUT_IS_IGNORED:
-            break;
-          case INPUT_IS_OPTION:
-          case INPUT_IS_TARGET: /* we don't mung the target... */
-            addArg(&c,p->args[curArg].s);
-            break;
-          case INPUT_IS_LARCHIVE:
-            addLarchive(&c, &p->args[curArg], p);
-            break;
-          case NOT_INPUT:
-            addArg(&c,p->args[curArg].s);
-            break;
-          default:
-            addArg(&c,p->args[curArg].realInput);
-        }
+      addArg(&c,extraLflags);
       addArg(&c," ");
-      ++curArg;
     }
-
-    if (!rc)
+    switch(p->args[curArg].inputType)
     {
-      rc = runCmd(p,&c);
+      case INPUT_IS_IGNORED:
+        break;
+      case INPUT_IS_OPTION:
+      case INPUT_IS_TARGET: /* we don't mung the target... */
+        addArg(&c,p->args[curArg].s);
+        break;
+      case INPUT_IS_LARCHIVE:
+        addLarchive(&c, &p->args[curArg], p);
+        break;
+      case NOT_INPUT:
+        addArg(&c,p->args[curArg].s);
+        break;
+      default:
+        addArg(&c,p->args[curArg].realInput);
     }
+    addArg(&c," ");
+    ++curArg;
+  }
+
+  if (!rc)
+  {
+    rc = runCmd(p,&c);
   }
 
   return rc;
@@ -1363,6 +1472,19 @@ static int compile(Parms_t *p)
       addArg(&c,extraCflags);
       addArg(&c," ");
     }
+#if OS390_BUILD
+    if (curArg == 1)
+    {
+      /* We don't truly need this unless objects can be put in DLLs, but it never
+       * hurts as far as I can tell.
+       *
+       * This argument is silently ignored by cc if added after the input .c file,
+       * so that is why we're adding it here instead of where we add -fPIC on BeOS.
+       */
+      addArg(&c, "-Wc,DLL,EXPORTALL ");
+    }
+#endif
+
     switch(p->args[curArg].inputType)
     {
       case INPUT_IS_IGNORED:
@@ -1407,12 +1529,6 @@ static int compile(Parms_t *p)
    */
   if (p->fromShlibtool)
     addArg(&c, "-fPIC ");
-#endif
-#if OS390_BUILD
-  /* we don't truly need this unless objects can be put in DLLs, but it never
-   * hurts as far as I can tell
-   */
-  addArg(&c, "-Wc,DLL,EXPORTALL");
 #endif
   
   if (!rc)
@@ -1502,6 +1618,10 @@ static int buildArchive(Parms_t *p)
         break;        
       case INPUT_IS_OBJ:
       case INPUT_IS_LOBJ:
+        assert(larch.numInputs < sizeof larch.inputs / sizeof larch.inputs[0]);
+        larch.inputs[larch.numInputs] = strdup(p->args[curArg].realInput);
+        ++larch.numInputs;
+
         if (! use_subdir){
           addArg(&c,p->args[curArg].realInput);
           addArg(&c," ");
@@ -1603,6 +1723,26 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
     {
       p->showVersion = 1;
     }
+    else if (!memcmp(argv[curArg],"--main=",7))
+    {
+#if SUPPORT_DLL_SPLIT
+      p->main_obj = strdup(argv[curArg] + 7);
+#else
+      fprintf(stderr,
+              "--main=foo is not supported on this platform.\n");
+      exit(1);
+#endif
+    }
+    else if (!memcmp(argv[curArg],"--core-dll=",11))
+    {
+#if SUPPORT_DLL_SPLIT
+      p->core_dll = strdup(argv[curArg] + 11);
+#else
+      fprintf(stderr,
+              "--core-dll=foo is not supported on this platform.\n");
+      exit(1);
+#endif
+    }
     else if (!strcmp(argv[curArg],"-rpath"))
     {
       ++curArg;
@@ -1668,14 +1808,6 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
       assert(p->numArgs < MAX_ARGS);
       p->args[p->numArgs].s = argv[curArg];
       ++p->numArgs;
-
-#if 0
-      /* KLUDGE!!! */
-      /* hokey way to see if we're doing dll-able code */
-      if (strstr(argv[curArg],"-Wc,DLL"))
-        p->buildingDll = 1;
-      /* END KLUDGE!!! */
-#endif
 
       if (!strcmp(argv[curArg],"-o"))
       {
@@ -1859,38 +1991,12 @@ static int install(Parms_t *p)
   if (p->fromShlibtool)
   {
     char *so;
-#if OS390_BUILD
-    Larchive_t la390;
-#endif
 
     so = strdup(p->args[1].s);
     strcpy(strstr(so,".la"),".so");
 
-#if OS390_BUILD
-    /* David says this is really bogus... He's right, of course.
-     */
-    loadLarchive(&la390,p->args[1].s);
-
-    addArg(&c,"cc -Wl,DLL -o ");
-    addArg(&c,so);
-    addArg(&c," ");
-    cur = 0;
-    while (cur < la390.numInputs)
-    {
-      addArg(&c,la390.inputs[cur]);
-      addArg(&c," ");
-      ++cur;
-    }
-    addArg(&c,"../../" CORE_X);
-
+    _buildCPcommand(&c, so, p->args[2].s);
     rc = runCmd(p,&c);
-#endif
-
-    if (!rc)
-    {
-      _buildCPcommand(&c, so, p->args[2].s);
-      rc = runCmd(p,&c);
-    }
   }
   else
   {
