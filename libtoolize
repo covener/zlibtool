@@ -2,5 +2,9 @@
 echo "libtoolize $*"
 mydir=`pwd`
 echo "libtoolize was invoked from directory $mydir"
+lte=`whence libtoolexe`
+dir=`dirname $lte`
+ln -sf $dir/../share/libtool/config.sub ./config.sub
+ln -sf $dir/../share/libtool/config.guess ./config.guess
 exit 0
 
