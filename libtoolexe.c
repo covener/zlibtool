@@ -1,5 +1,12 @@
 /*
  * $Log$
+ * Revision 1.22  2001/04/30 19:40:19  trawick
+ * Teach the install code to let this command-line work:
+ *
+ *   libtoolexe --mode=install cp libapr.la /u/trawick/apacheinst/lib
+ *
+ * We copy libapr.la and .libs/libapr.a to the target directory.
+ *
  * Revision 1.21  2001/03/29 12:17:23  trawick
  * Escape quotation marks on the command-line.  This allows invocations like
  *
@@ -149,6 +156,29 @@ FILE *debugf;
 #define CORE_BASENAME     "apachecore"
 #define CORE_DLL          CORE_BASENAME ".dll"
 #define CORE_X            CORE_BASENAME ".x"
+
+#ifdef __BEOS__
+#define PLATFORM "BeOS"
+#endif
+#ifdef __MVS_
+#define PLATFORM "OS/three-ninety"
+#endif
+#ifndef PLATFORM
+#error Please define the PLATFORM string.
+#endif
+
+/* Forward declarations... */
+
+char *getDirPrefix(const char *f);
+
+#define MAX_INPUTS 1000
+
+typedef struct
+{
+  char *fname;
+  int numInputs;
+  char *inputs[MAX_INPUTS];
+} Larchive_t;
 
 typedef struct
 {
@@ -645,15 +675,6 @@ static int runCmd(Parms_t *p,Cmdline_t *c)
 
   return rc;
 }
-
-#define MAX_INPUTS 1000
-
-typedef struct
-{
-  char *fname;
-  int numInputs;
-  char *inputs[MAX_INPUTS];
-} Larchive_t;
 
 static void dumpLarchive(Larchive_t *la)
 {
@@ -1398,7 +1419,7 @@ static int version(Parms_t *p)
    *       number out of the output.
    */
 
-  printf(PGM ": This is libtool 1.3.4 for OS/three-ninety.\n"
+  printf(PGM ": This is libtool 1.3.4 for " PLATFORM ".\n"
          "It acts enough like GNU libtool to allow Apache to be built.\n");
   return 0;
 }
