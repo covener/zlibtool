@@ -1,5 +1,8 @@
 /*
  * $Log$
+ * Revision 1.7  2000/08/18 20:53:28  trawick
+ * Fix snafu in previous commit.
+ *
  * Revision 1.6  2000/08/18 14:27:13  trawick
  * Use "apachecore.dll" instead of "httpdcore.dll" to be more consistent with
  * Win32.
@@ -990,7 +993,7 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
 
       /* KLUDGE!!! */
       /* hokey way to see if we're doing dll-able code */
-      if (!strstr(argv[curArg],"-Wc,DLL"))
+      if (strstr(argv[curArg],"-Wc,DLL"))
         p->buildingDll = 1;
       /* END KLUDGE!!! */
 
