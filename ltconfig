@@ -4,7 +4,30 @@ echo "ltconfig $*"
 mycwd=`pwd`
 echo "ltconfig invoked from directory $mycwd"
 lte=`whence libtoolexe`
-echo "#!/bin/sh" > libtool
-echo "$lte \$*" >> libtool
-chmod +x libtool
+ltdir=`dirname $lte`
+if test ".$1" = ".--output=shlibtool"
+then
+	if test -f ./shlibtool
+	then
+		echo "no need to create symbolic link to shlibtool"
+	else
+		echo "creating a symbolic link to shlibtool..."
+        	shlibtool="$ltdir/shlibtool"
+		ln -s $shlibtool ./shlibtool
+		ls -la ./shlibtool
+	fi
+else
+	echo "#!/bin/sh" > libtool
+	echo "$lte \$*" >> libtool
+	chmod +x libtool
+	if test -f ./ltconfig
+	then
+		echo "no need to create symbolic link to ltconfig"
+	else
+		real_ltconfig="$ltdir/ltconfig"
+		ln -s $real_ltconfig ./ltconfig
+		echo "just created this link from the current dir to $real_ltconfig:"
+		ls -la ./ltconfig
+	fi
+fi
 

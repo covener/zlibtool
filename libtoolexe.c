@@ -1,5 +1,10 @@
 /*
  * $Log$
+ * Revision 1.3  2000/07/05 16:55:33  trawick
+ * Add initial (hokey) support for adding text to the top of a source
+ * file.  Currently, this is hard-coded to add a pragma runopt to
+ * http_main.c.
+ *
  * Revision 1.2  2000/06/30 13:38:38  trawick
  * Add ability to specify per-target commands in .libtoolconf.
  * These commands are issued just after a successful build of
@@ -19,6 +24,7 @@ static const char rcsid[] = "$Id$";
 #include <string.h>
 
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 #define PGM "libtoolexe"
 
@@ -35,6 +41,40 @@ struct CmdRec
 static int numCmds;
 static struct CmdRec cmds[MAX_CMDS];
 static int debug;
+#define DEBUG_GORY_DETAILS 3
+#define DEBUG_OVERVIEW     2
+#define DEBUG_SHOWCMD      1
+FILE *debugf;
+
+#define MAX_ARGS 200
+
+typedef struct
+{
+  const char *s; 
+  /* the following fields are always set if this is an input file */
+  const char *realInput;
+  enum {INPUT_IS_OBJ = 100, INPUT_IS_LOBJ, INPUT_IS_ARCHIVE,
+        INPUT_IS_LARCHIVE, INPUT_IS_IGNORED, NOT_INPUT} inputType;
+} Arg_t;
+
+typedef struct Parms_t
+{
+  unsigned int fromShlibtool : 1;
+  unsigned int silent : 1;
+  unsigned int exportDynamic : 1;
+  unsigned int module : 1;
+  unsigned int avoidVersion : 1;
+  unsigned int showVersion : 1;
+  unsigned int buildingDll : 1;
+  const char *target;
+  const char *rpath;
+  const char *version;
+  enum {COMPILE=3, LINK, SHOWVERSION, INSTALL, UNKNOWN_MODE} mode;
+  enum {OUTPUT_IS_OBJ=9, OUTPUT_IS_ARCHIVE, OUTPUT_IS_EXE, UNKNOWN_OUTPUT} outputType;
+  Arg_t args[MAX_ARGS];
+  int numArgs;
+  int firstInput;
+} Parms_t;
 
 static void addCmd(const char *target,const char *cmd)
 {
@@ -69,7 +109,8 @@ static int runCmds(const char *target)
     {
       int orc;
 
-      printf(PGM ": %s\n",cmds[curCmd].cmd);
+      if (debug >= DEBUG_SHOWCMD)
+        printf(PGM ": %s\n",cmds[curCmd].cmd);
 
       orc = system(cmds[curCmd].cmd);
       if (WIFEXITED(orc))
@@ -256,13 +297,856 @@ static int editInputFile(const char *inputFile,const char *mode)
   return rc;
 }
 
+static int shlibtoolLink(Parms_t *p)
+{
+  int rc = 0;
+  FILE *la;
+  char *intendedSo = strdup(p->target);
+  char *dotla;
+
+  dotla = strstr(intendedSo,".la");
+  assert(dotla);
+  strcpy(dotla,".so");
+
+  /*
+   * Create the output file
+   */
+
+  la = fopen(p->target,"w");
+  if (!la)
+  {
+    fprintf(stderr,"couldn't create %s: %s\n",p->target,strerror(errno));
+    exit(1);
+  }
+
+  fprintf(la,
+	  "# We can't build a dso from %s until install time because\n"
+          "# we don't have the .x file from building core.dll\n");
+  fprintf(la,
+          "# intended shared object: %s\n",intendedSo);
+  fprintf(la,"input:%s\n",p->args[p->firstInput].realInput);
+  fclose(la);
+
+  return rc;
+}
+
+static const char *modeStr(int mode)
+{
+  switch(mode)
+  {
+    case COMPILE:
+      return "COMPILE";
+    case LINK: 
+      return "LINK";
+    case SHOWVERSION:
+      return "SHOWVERSION";
+    case INSTALL:
+      return "INSTALL";
+  }
+  return "(unknown)";
+}
+
+static const char *inputTypeStr(int type)
+{
+  switch(type)
+  {
+    case INPUT_IS_OBJ:
+      return "OBJ";
+    case INPUT_IS_LOBJ:
+      return "LOBJ";
+    case INPUT_IS_ARCHIVE:
+      return "ARCHIVE";
+    case INPUT_IS_LARCHIVE:
+      return "LARCHIVE";
+    case INPUT_IS_IGNORED:
+      return "(ignored)";
+  }
+  return "(unknown)";
+}
+
+static const char *outputTypeStr(int type)
+{
+  switch(type)
+  {
+    case OUTPUT_IS_OBJ:
+      return "OBJECT";
+    case OUTPUT_IS_ARCHIVE:
+      return "ARCHIVE";
+    case OUTPUT_IS_EXE:
+      return "EXE";
+  }
+  return "(unknown)";
+}
+
+static void dumpParms(Parms_t *p)
+{
+  int curArg;
+
+  printf("Mode: %s\n",modeStr(p->mode));
+  printf("Output type: %s\n",outputTypeStr(p->outputType));
+  printf("Target: %s\n",p->target ? p->target : "(unknown)");
+  printf("Flags: %s%s%s%s%s%s\n",
+         p->buildingDll   ? "dll "            : "",
+         p->fromShlibtool ? "shlibtool "      : "",
+         p->silent        ? "silent "         : "",
+         p->exportDynamic ? "export-dynamic " : "",
+         p->module        ? "module "         : "",
+         p->showVersion   ? "show-version "   : "",
+         p->avoidVersion  ? "avoid-version "  : "");
+  printf("Compiler arguments:\n");
+  curArg = 0; 
+  while (curArg < p->firstInput)
+  {
+    printf("\t%s\n",p->args[curArg].s);
+    ++curArg;
+  }
+  printf("Input files:\n");
+  while (curArg < p->numArgs)
+  {
+    printf("\t%-10s %-40s %s\n",
+           inputTypeStr(p->args[curArg].inputType),
+           p->args[curArg].s,
+           p->args[curArg].realInput);
+    ++curArg;
+  }
+}
+
+static int removeFile(const char *f,int fatal)
+{
+  int rc = 0;
+  struct stat sb;
+
+  if (stat(f,&sb) == 0)
+  {
+    if (unlink(f))
+    {
+      perror(f);
+      exit(1);
+    }
+  }
+
+  return 0;
+}
+
+#define max(x,y) ((x) >= (y) ? (x) : (y))
+
+typedef struct
+{
+  char *s;
+  size_t curLen;
+  size_t curSize;
+} Cmdline_t;
+
+static void addArg(Cmdline_t *c,const char *add)
+{
+  size_t addLen;
+
+  assert(add);
+  addLen = strlen(add);
+
+  if (addLen == 0)
+    return;
+
+  if (c->curLen + addLen + 1 > c->curSize)
+  {
+    size_t newSize;
+
+    newSize = c->curSize + max(addLen,1024);
+    c->s = realloc(c->s,newSize);
+    assert(c->s);
+    c->curSize = newSize;
+  }
+  strcpy(c->s + c->curLen,add);
+  c->curLen += addLen; 
+}
+
+static int runCmd(Parms_t *p,Cmdline_t *c)
+{
+  int rc = 0, orc;
+
+  if (!rc)
+  {
+    if (!p->silent || debug >= DEBUG_SHOWCMD)
+      printf(PGM ": %s\n",c->s);
+    fflush(stdout);
+    orc = system(c->s);
+    if (WIFEXITED(orc))
+    {
+      rc = WEXITSTATUS(orc);
+    }
+  }
+
+  return rc;
+}
+
+#define MAX_INPUTS 1000
+
+typedef struct
+{
+  char *fname;
+  int numInputs;
+  char *inputs[MAX_INPUTS];
+} Larchive_t;
+
+static void dumpLarchive(Larchive_t *la)
+{
+  int cur;
+
+  fprintf(debugf,"larchive %s:\n",la->fname);
+  cur = 0;
+  while (cur < la->numInputs)
+  {
+    fprintf(debugf,"\t%s\n",la->inputs[cur]);
+    ++cur;
+  }
+}
+
+static void loadLarchive(Larchive_t *la,const char *fname)
+{
+  FILE *in;
+  char *inline = malloc(100000);
+  char *ch, *tmpch;
+
+  memset(la,0,sizeof(*la));
+
+  la->fname = strdup(fname);
+  in = fopen(fname,"r");
+  if (!in)
+  {
+    perror(fname);
+    exit(1);
+  }
+  while (!ferror(in) && !feof(in))
+  {
+    ch = fgets(inline,100000,in);
+    if (ch)
+    {
+      if (inline[strlen(inline) - 1] != '\n')
+      {
+        fprintf(stderr,"line too big in %s\n",fname);
+        exit(1);
+      }
+      inline[strlen(inline) - 1] = '\0';
+      if (inline[0] == '#')
+        continue;
+      if (!memcmp(inline,"input:",6))
+      {
+        ch = inline + 6;
+        while (*ch)
+        {
+          if (isspace(*ch))
+            ++ch;
+          else
+          {
+            la->inputs[la->numInputs] = ch;
+            ++la->numInputs;
+            tmpch = strchr(ch,' ');
+            if (tmpch)
+            {
+              *tmpch = '\0';
+              ch = tmpch + 1;
+            }
+            else
+              ch = ch + strlen(ch);
+            /* Now, make a copy... */
+            la->inputs[la->numInputs - 1] =
+              strdup(la->inputs[la->numInputs - 1]);
+          }
+        }
+        continue;
+      }
+      fprintf(stderr,
+              "syntax error in %s: %s\n",
+              fname,inline);
+    }
+  }
+
+  fclose(in);
+
+  free(inline); 
+}
+
+char *getDirPrefix(const char *f)
+{
+  char *dirPrefix;
+
+  if (strchr(f,'/'))
+  {
+    char *lastSlash, *ch;
+
+    dirPrefix = strdup(f);
+    lastSlash = strchr(dirPrefix,'/');
+    while ((ch = strchr(lastSlash + 1,'/')))
+    {
+      lastSlash = ch;
+    }
+    *(lastSlash + 1) = '\0'; 
+  }
+  else
+  {
+    dirPrefix = "";
+  }
+
+  return dirPrefix;
+}
+
+static void addArchive(Cmdline_t *c,Arg_t *a)
+{
+  char *dirPrefix;
+  char cmdline[1024];
+  char buf[1024];
+  FILE *ar;
+  char *ch;
+  int rc;
+
+  assert(a->inputType == INPUT_IS_ARCHIVE);
+  if (debug >= DEBUG_GORY_DETAILS)
+    fprintf(debugf,"Adding the list of objects for %s now...\n",
+            a->s);
+
+  dirPrefix = getDirPrefix(a->s);
+
+  sprintf(cmdline,"ar -t %s",a->s);
+  ar = popen(cmdline,"r");
+  if (!ar)
+  {
+    perror(cmdline);
+    exit(1);
+  }
+  while (!ferror(ar) && !feof(ar))
+  {
+    ch = fgets(buf,sizeof(buf),ar);
+    if (ch)
+    {
+      if (buf[strlen(buf) - 1] == '\n')
+        buf[strlen(buf) - 1] = '\0';
+
+      if (!strcmp(buf,"__.SYMDEF"))
+      {
+        /* not a real member; skip it */
+      }
+      else
+      {
+        if (debug >= DEBUG_GORY_DETAILS)
+          fprintf(debugf,"archive member `%s'\n",buf);
+
+        addArg(c,dirPrefix);
+/*KLUDGE!!!!!!!!!!!!*/
+        addArg(c,"objs/");
+/*END KLUDGE!!!!!!!!*/
+        addArg(c,buf);
+        addArg(c," ");
+      }
+    }
+  }
+  rc = pclose(ar);
+  if (rc)
+  {
+    fprintf(stderr,"`%s' -> %d\n",
+            cmdline,rc);
+    exit(1);
+  }
+}
+
+static void addLarchive(Cmdline_t *c,Arg_t *a)
+{
+  char *dirPrefix;
+  Larchive_t la;
+  int cur;
+
+  assert(a->inputType == INPUT_IS_LARCHIVE);
+  if (debug >= DEBUG_GORY_DETAILS)
+    fprintf(debugf,"Adding the list of objects for %s now...\n",
+            a->s);
+
+  dirPrefix = getDirPrefix(a->s);
+
+  loadLarchive(&la,a->s);
+  if (debug >= DEBUG_GORY_DETAILS)
+    dumpLarchive(&la);
+
+  cur = 0;
+  while (cur < la.numInputs)
+  {
+    if (!strcmp(la.inputs[cur],"http_main.o"))
+    {
+      /* don't put http_main.o in the dll; it is stand-alone */
+    }
+    else
+    {
+      addArg(c,dirPrefix);
+      addArg(c,la.inputs[cur]);
+      addArg(c," ");
+    }
+    ++cur;
+  }
+}
+
+static int buildMain(Parms_t *p)
+{
+  int rc = 0;
+  int orc;
+  Cmdline_t c = {0};
+  int curArg;
+
+  /* First, build the dll. */
+
+  curArg = 0;
+  while (curArg < p->numArgs &&
+         strcmp(p->args[curArg].s,"-o"))
+  {
+    addArg(&c,p->args[curArg].s);
+    addArg(&c," ");
+    ++curArg;
+  }
+
+  assert(!strcmp(p->args[curArg].s,"-o"));
+  ++curArg;
+  ++curArg;
+
+  addArg(&c,"-Wl,DLL ");
+  addArg(&c,"-o httpdcore.dll ");
+
+  /* Now, process the input files... */
+
+  while (curArg < p->numArgs)
+  {
+    switch(p->args[curArg].inputType)
+    {
+      case INPUT_IS_OBJ:
+      case INPUT_IS_LOBJ:
+        addArg(&c,p->args[curArg].realInput);
+        addArg(&c," ");
+        break;
+      case INPUT_IS_ARCHIVE:
+        addArchive(&c,&p->args[curArg]);
+        break;
+      case INPUT_IS_LARCHIVE:
+        addLarchive(&c,&p->args[curArg]);
+        break;
+      case INPUT_IS_IGNORED:
+        /* Skip this; we don't care about it for one reason or another. */
+        break;
+      default:
+        fprintf(stderr,"Unexpected input type %d at %d\n",
+                p->args[curArg].inputType,__LINE__);
+        exit(1);
+    }
+    ++curArg;
+  }
+
+  rc = runCmd(p,&c);
+
+  if (!rc)
+  {
+    memset(&c,0,sizeof(c));
+    addArg(&c,"cc -g -Wl,DLL -o httpd main/http_main.o httpdcore.x");
+  }
+
+  if (!rc)
+  {
+    rc = runCmd(p,&c);
+  }
+
+  return rc;
+}
+
+static int buildExe(Parms_t *p)
+{
+  int rc = 0;
+
+  assert(p->mode == LINK);
+  assert(p->outputType == OUTPUT_IS_EXE);
+
+  if (p->buildingDll && !strcmp(p->target,"httpd"))
+  {
+    rc = buildMain(p);
+  }
+  else
+  {
+    /*
+     * simple link-edit: just run the specified command
+     */
+
+    Cmdline_t c = {0};
+    int curArg;
+
+    curArg = 0;
+    while (curArg < p->numArgs)
+    {
+      if (curArg >= p->firstInput)
+        addArg(&c,p->args[curArg].realInput);
+      else
+        addArg(&c,p->args[curArg].s);
+      addArg(&c," ");
+      ++curArg;
+    }
+
+    if (!rc)
+    {
+      rc = runCmd(p,&c);
+    }
+  }
+
+  return rc;
+}
+
+static int compile(Parms_t *p)
+{
+  int rc = 0;
+  int curArg;
+  Cmdline_t c = {0};
+
+  /*
+   * simple compile: just run the specified command
+   *
+   * Currently we don't have any special processing for shlibtool.
+   */
+
+  curArg = 0;
+  while (curArg < p->numArgs)
+  {
+    if (curArg >= p->firstInput)
+      addArg(&c,p->args[curArg].realInput);
+    else
+      addArg(&c,p->args[curArg].s);
+    addArg(&c," ");
+    ++curArg;
+  }
+
+  if (!rc)
+  {
+    rc = runCmd(p,&c);
+  }
+
+  return rc;
+}
+
+static int buildArchive(Parms_t *p)
+{
+  int rc = 0;
+  int curArg;
+  char *archiveName;
+  Cmdline_t c = {0};
+
+  /* turn foo.la into foo.a to create the archive name */
+  archiveName = strdup(p->target);
+  strcpy(archiveName + strlen(archiveName) - 3,".a"); 
+
+  removeFile(archiveName,1);
+
+  /* build ar command-line */
+
+  addArg(&c,"ar -rs ");
+  addArg(&c,archiveName);
+  addArg(&c," ");
+  curArg = p->firstInput;
+  while (curArg < p->numArgs)
+  {
+    if (p->args[curArg].inputType != INPUT_IS_IGNORED)
+    {
+      addArg(&c,p->args[curArg].realInput);
+      addArg(&c," ");
+    }
+    ++curArg;
+  }
+
+  rc = runCmd(p,&c);
+
+  if (!rc)
+  {
+    /* now build the .la file, which contains a list of objects */
+    FILE *la;
+
+    la = fopen(p->target,"w");
+    if (!la)
+    {
+      perror(p->target);
+      exit(1);
+    }
+    fprintf(la,"input:");
+    curArg = p->firstInput;
+    while (curArg < p->numArgs)
+    {
+      fprintf(la,"%s ",p->args[curArg].realInput);
+      ++curArg;
+    }
+    fprintf(la,"\n");
+    fclose(la);
+  }
+
+  return rc;
+}
+
+static int parseCmdline(int argc,char **argv,Parms_t *p)
+{
+  int rc = 0;
+  int curArg;
+  int firstInputSet = 0;
+  const char *modeStr;
+  enum {NORM, TARGET} state = NORM;
+
+  p->mode = 0; /* not a valid mode */
+  curArg = 1;
+  while (curArg < argc)
+  {
+    if (debug >= DEBUG_GORY_DETAILS)
+      fprintf(debugf,"arg %d: %s\n",curArg,argv[curArg]);
+   
+    if (!strcmp(argv[curArg],"--from-shlibtool"))
+    {
+      p->fromShlibtool = 1;
+    }
+    else if (!strcmp(argv[curArg],"--silent"))
+    {
+      p->silent = 1;
+    }
+    else if (!strcmp(argv[curArg],"--quiet"))
+    {
+      p->silent = 1;
+    }
+    else if (!strcmp(argv[curArg],"--version"))
+    {
+      p->showVersion = 1;
+    }
+    else if (!strcmp(argv[curArg],"-rpath"))
+    {
+      ++curArg;
+      p->rpath = argv[curArg];
+    }
+    else if (!strcmp(argv[curArg],"-version-info"))
+    {
+      ++curArg;
+      p->version = argv[curArg];
+    }
+    else if (!strcmp(argv[curArg],"-module"))
+    {
+      p->module = 1;
+    }
+    else if (!strcmp(argv[curArg],"-avoid-version"))
+    {
+      p->avoidVersion = 1;
+    } 
+    else if (!memcmp(argv[curArg],"--mode=",7))
+    {
+      modeStr = argv[curArg] + 7;
+      if (!strcmp(modeStr,"compile"))
+        p->mode = COMPILE;
+      else if (!strcmp(modeStr,"link"))
+        p->mode = LINK;
+      else if (!strcmp(modeStr,"install"))
+        p->mode = INSTALL;
+      else
+      {
+        fprintf(stderr,"unknown mode parm: %s\n",argv[curArg]);
+        p->mode = UNKNOWN_MODE;
+      }
+    }
+    else if (!strcmp(argv[curArg],"-export-dynamic")) 
+    {
+      p->exportDynamic = 1;
+    }
+    else
+    {
+      if (debug >= DEBUG_GORY_DETAILS)
+        fprintf(debugf,"normal compile option: %s\n",argv[curArg]);
+      assert(p->numArgs < MAX_ARGS);
+      p->args[p->numArgs].s = argv[curArg];
+      ++p->numArgs;
+
+      /* KLUDGE!!! */
+      /* hokey way to see if we're doing dll-able code */
+      if (!strstr(argv[curArg],"-Wc,DLL"))
+        p->buildingDll = 1;
+      /* END KLUDGE!!! */
+
+      if (!strcmp(argv[curArg],"-o"))
+      {
+        assert(state == NORM);
+        state = TARGET;
+      }
+      else if (state == TARGET)
+      {
+        size_t targetLen = strlen(argv[curArg]);
+
+        state = NORM;
+        p->firstInput = p->numArgs; /* input files come after target */
+        firstInputSet = 1;
+        assert(!p->target);
+        p->target = argv[curArg];
+
+        /* Figure out what type of target it is. */
+        if (!strcmp(p->target + targetLen - 3,".la"))
+        {
+          p->outputType = OUTPUT_IS_ARCHIVE;
+        }
+        else if (!strchr(p->target,'.'))
+          p->outputType = OUTPUT_IS_EXE;
+        else
+          p->outputType = UNKNOWN_OUTPUT;
+      }
+
+      if (firstInputSet && (p->numArgs - 1) >= p->firstInput)
+      {
+        /* convert foo.lo into foo.o */
+        if (strstr(argv[curArg],".lo"))
+        {
+          char *tmp;
+
+          p->args[p->numArgs - 1].inputType = INPUT_IS_LOBJ;
+          tmp = strdup(argv[curArg]);
+          assert(tmp);
+          strcpy(tmp + strlen(tmp) - 3,".o");
+          p->args[p->numArgs - 1].realInput = tmp;
+        }
+        else if (strstr(argv[curArg],".o"))
+        {
+          p->args[p->numArgs - 1].inputType = INPUT_IS_OBJ;
+          p->args[p->numArgs - 1].realInput = 
+          p->args[p->numArgs - 1].s;
+        }
+        else if (strstr(argv[curArg],".la"))
+        {
+          char *tmp;
+
+          p->args[p->numArgs - 1].inputType = INPUT_IS_LARCHIVE;
+          tmp = strdup(argv[curArg]);
+          assert(tmp);
+          strcpy(tmp + strlen(tmp) - 3,".a");
+          p->args[p->numArgs - 1].realInput = tmp;
+        }
+        else if (strstr(argv[curArg],".a"))
+        {
+          p->args[p->numArgs - 1].inputType = INPUT_IS_ARCHIVE;
+          p->args[p->numArgs - 1].realInput = 
+          p->args[p->numArgs - 1].s;
+        }
+        else if (strstr(argv[curArg],".h"))
+        {
+          p->args[p->numArgs - 1].inputType = INPUT_IS_IGNORED;
+        }
+        else
+        {
+          fprintf(stderr,"Hmmm... what kind of input is %s?\n",
+                  p->args[p->numArgs - 1].s);
+        }
+      }
+      else
+        p->args[p->numArgs - 1].inputType = NOT_INPUT;
+    }
+    ++curArg;
+  }
+
+  if (p->mode == 0 &&
+      p->showVersion)
+  {
+    p->mode = SHOWVERSION;
+  }
+
+  if (!firstInputSet)
+  {
+    /* no input files specified */
+    p->firstInput = p->numArgs;
+  }
+  
+  return rc;
+}
+
+static int link(Parms_t *p)
+{
+  int rc;
+
+  switch(p->outputType)
+  {
+    case OUTPUT_IS_ARCHIVE:
+      if (p->fromShlibtool)
+        rc = shlibtoolLink(p);
+      else
+        rc = buildArchive(p);
+      break;
+    case OUTPUT_IS_EXE:
+      assert(!p->fromShlibtool);
+      rc = buildExe(p);
+      break;
+    default:
+      fprintf(stderr,
+              "link(): unhandled output type %d\n",
+              p->outputType);
+      exit(1);
+  }
+
+  return rc;
+}
+
+static int version(Parms_t *p)
+{
+  assert(p->mode == SHOWVERSION);
+
+  /*
+   * Note: We don't print "OS/390" in the following message because
+   *       that throws off Apache's sed code to strip the version
+   *       number out of the output.
+   */
+
+  printf(PGM ": This is libtool 1.3.4 for OS/three-ninety.\n"
+         "It acts enough like GNU libtool to allow Apache to be built.\n");
+  return 0;
+}
+
+static int install(Parms_t *p)
+{
+  int rc = 0;
+  int cur;
+  Cmdline_t c = {0};
+  char *so;
+  Larchive_t la;
+
+  assert(p->numArgs == 3);
+  assert(p->fromShlibtool);
+  assert(!strcmp(p->args[0].s,"cp"));
+
+  so = strdup(p->args[1].s);
+  strcpy(strstr(so,".la"),".so");
+
+  loadLarchive(&la,p->args[1].s);
+
+  addArg(&c,"cc -Wl,DLL -o ");
+  addArg(&c,so);
+  addArg(&c," ");
+  cur = 0;
+  while (cur < la.numInputs)
+  {
+    addArg(&c,la.inputs[cur]);
+    addArg(&c," ");
+    ++cur;
+  }
+  addArg(&c,"../../httpdcore.x");
+
+  rc = runCmd(p,&c);
+
+  if (!rc)
+  {
+    memset(&c,0,sizeof(c));
+    addArg(&c,"cp ");
+    addArg(&c,so);
+    addArg(&c," ");
+    addArg(&c,p->args[2].s);
+
+    rc = runCmd(p,&c);
+  }
+  
+  return rc;
+}
+
 int main(int argc,char **argv)
 {
-  int curArg, rc, orc;
-  char cmdline[40000];
-  const char *mode = NULL, *inputFile = NULL;
+  int rc;
+  Parms_t parms = {0};
 
+  debugf = stdout;
   debug = getenv("LIBTOOLDEBUG") != NULL;
+  if (debug)
+    debug = atoi(getenv("LIBTOOLDEBUG"));
 
   if (argc == 1)
   {
@@ -277,191 +1161,49 @@ int main(int argc,char **argv)
     fprintf(stderr,PGM ": readCfgFile()->%d\n",rc);
     exit(1);
   }
-  
-  curArg = 1;
-  while (curArg < argc)
+ 
+  rc = parseCmdline(argc,argv,&parms);
+  if (rc)
   {
-    if (!strcmp(argv[curArg],"--version"))
-    {
-      /*
-       * Note: We don't print "OS/390" in the following message because
-       *       that throws off Apache's sed code to strip the version
-       *       number out of the output.
-       */
-
-      printf(PGM ": This is libtool 1.3.4 for OS/three-ninety.\n"
- 	     "It acts enough like GNU libtool to allow Apache to be built.\n");
-      exit(0);
-    }
-
-    if (!memcmp(argv[curArg],"--mode=",strlen("--mode=")))
-    {
-      mode = argv[curArg] + strlen("--mode=");
-      if (debug)
-        printf("mode: %s\n",mode);
-    }
-
-    /*
-     * Hack: also look for c89, because mm makefiles are
-     * using "libtool c89" for Greg.
-     */
-    
-    if (!strcmp(argv[curArg],"cc") ||
-        !strcmp(argv[curArg],"c89"))
-    {
-      enum {NORM=1,TARGET} state = NORM;
-      char *ccpos = cmdline;
-      char *dashopos = NULL;
-      const char *target;
-      
-      /*
-       * This is the start of the command to be executed.
-       */
-
-      cmdline[0] = '\0';
-      while (curArg < argc)
-      {
-        size_t len;
-
-        if (curArg + 1 == argc)
-        {
-          /* last argument */
-
-          inputFile = argv[curArg];
-        }
-
-        if (!strcmp(argv[curArg],"-rpath") ||
-            !strcmp(argv[curArg],"-version-info"))
-        {
-          /*
-           * -rpath ARG and -version-info ARG aren't supported.
-           *
-           * Skip it.
-           */
-
-          if (! (curArg + 1 < argc))
-          {
-            fprintf(stderr,
-                    PGM ": I'm confused... It looks like `%s' doesn't have "
-                    "an argument.\n",
-                    argv[curArg]);
-            exit(1);
-          }
-
-          if (debug)
-              printf(PGM ": Ignoring \"%s %s\"...\n",
-                     argv[curArg], argv[curArg + 1]);
-          
-          curArg += 2;
-          continue;                 /* Just pretend -rpath ARG wasn't
-                                       on the command-line.          */
-        }
-
-        if (!strcmp(argv[curArg],"-export-dynamic"))
-        {
-          /*
-           * -export-dynamic isn't supported... skip it
-           */
-
-          ++curArg;
-          continue;
-        }
-        
-        strcat(cmdline,argv[curArg]);
-
-        /*
-         * If this is cc or -o, leave extra room because the commands/
-         * options we overlay them with may be larger.
-         *
-         * Hack: also look for c89, because mm makefiles are
-         * using "libtool c89" for Greg.
-         */
-        
-        if (!strcmp(argv[curArg],"cc") ||
-            !strcmp(argv[curArg],"c89") ||
-            !strcmp(argv[curArg],"-o"))
-          strcat(cmdline,"  ");
-            
-        len = strlen(argv[curArg]);
-
-        /* turn foo.lo into foo.o */
-        if (argv[curArg][len - 3] == '.' &&
-            argv[curArg][len - 2] == 'l' &&
-            argv[curArg][len - 1] == 'o')
-        {
-          len = strlen(cmdline);
-          assert(cmdline[len - 3] == '.');
-          assert(cmdline[len - 2] == 'l');
-          cmdline[len - 2] = 'o';
-          cmdline[len - 1] = '\0';
-        }
-        strcat(cmdline," ");
-
-        if (state == TARGET)
-        {
-          state = NORM;
-          target = argv[curArg];
-          
-          if (argv[curArg][len - 3] == '.' &&
-              argv[curArg][len - 2] == 'l' &&
-              argv[curArg][len - 1] == 'a')
-          {
-            char *ch;
-            
-            /*
-             * Hack: also look for c89, because mm makefiles are
-             * using "libtool c89" for Greg.
-             */
-
-            assert(!memcmp(ccpos,"cc ",3) ||
-                   !memcmp(ccpos,"c89 ",4));
-            assert(dashopos);
-            assert(dashopos > ccpos);
-            ch = ccpos;
-            while (ch < dashopos)
-            {
-              *ch = ' ';
-              ++ch;
-            }
-            memcpy(ccpos,"ar  ",4); /* overlay cc command            */
-            memcpy(dashopos,"-rs ",4); /* overlay -o argument        */
-            ccpos = NULL;
-            dashopos = NULL;
-          }
-        }
-        else if (state == NORM &&
-                 !strcmp(argv[curArg],"-o"))
-        {
-          state = TARGET;
-          dashopos = cmdline + strlen(cmdline) - strlen("-o   ");
-        }
-        
-        ++curArg;
-      }
-      assert(state == NORM);
-      if (inputFile && mode)
-        rc = editInputFile(inputFile,mode);
-      if (!rc)
-      {
-        printf(PGM ": %s\n",cmdline);
-        fflush(stdout);
-        orc = system(cmdline);
-        if (WIFEXITED(orc))
-        {
-          rc = WEXITSTATUS(orc);
-        }
-        else
-          rc = 1;
-      }
-      if (!rc)
-        rc = runCmds(target);
-      if (rc)
-        fprintf(stderr,PGM ": returning error code %d (%X)...\n",rc,orc);
-      exit(rc);
-    }
-    
-    ++curArg;
+    fprintf(stderr,"parseCmdline()->%d\n",
+            rc);
+    exit(rc);
   }
 
-  return 0;
+  if (debug >= DEBUG_OVERVIEW)
+    dumpParms(&parms);
+
+  switch(parms.mode)
+  {
+    case LINK:
+      rc = link(&parms);
+      break;
+    case COMPILE:
+      rc = compile(&parms);
+      break;
+    case SHOWVERSION:
+      rc = version(&parms);
+      break;
+    case INSTALL:
+      rc = install(&parms);
+      break;
+    default:
+      fprintf(stderr,"support needed for mode %s/output %s\n",
+              modeStr(parms.mode),outputTypeStr(parms.outputType));
+      exit(999);
+  }
+
+#ifdef OLD
+      if (inputFile && mode)
+        rc = editInputFile(inputFile,mode);
+      /* normal command was done here */
+      if (!rc)
+        rc = runCmds(target);
+      exit(rc);
+#endif
+
+  if (rc)
+    fprintf(stderr,PGM ": returning error code %d...\n",rc);
+
+  return rc;
 }

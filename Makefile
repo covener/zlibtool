@@ -1,5 +1,9 @@
 #
 # $Log$
+# Revision 1.3  2000/06/30 14:26:14  trawick
+# Install config.sub and config.guess.
+# Make sure target directories exist.
+#
 # Revision 1.2  2000/06/30 13:39:27  trawick
 # Add install target; fix CFLAGS; don't build libtoolize (not .c anymore).
 #
@@ -8,18 +12,21 @@
 #
 #
 
-CFLAGS=-D_ALL_SOURCE
+CFLAGS=-D_ALL_SOURCE -g
+LFLAGS=-g
 
 all: libtoolexe
 # libtoolize
 
-install: libtoolexe libtool.m4 libtool libtoolize ltconfig config.guess config.sub
+install: libtoolexe libtool.m4 libtool libtoolize ltconfig config.guess config.sub shlibtool
 	chmod +x ./check_libtool_prefix
 	./check_libtool_prefix
 	mkdir -p $(LIBTOOL_PREFIX)/bin
 	cp -p libtoolexe $(LIBTOOL_PREFIX)/bin
 	cp -p libtool $(LIBTOOL_PREFIX)/bin
 	chmod +x $(LIBTOOL_PREFIX)/bin/libtool
+	cp -p shlibtool $(LIBTOOL_PREFIX)/bin
+	chmod +x $(LIBTOOL_PREFIX)/bin/shlibtool
 	cp -p libtoolize $(LIBTOOL_PREFIX)/bin
 	chmod +x $(LIBTOOL_PREFIX)/bin/libtoolize
 	cp -p ltconfig $(LIBTOOL_PREFIX)/bin
@@ -33,7 +40,7 @@ install: libtoolexe libtool.m4 libtool libtoolize ltconfig config.guess config.s
 	chmod +x $(LIBTOOL_PREFIX)/share/libtool/config.sub
 
 libtoolexe: libtoolexe.o
-	c89 -o libtoolexe libtoolexe.o
+	c89 $(LFLAGS) -o libtoolexe libtoolexe.o
 
 libtoolexe.o: libtoolexe.c
 	c89 $(CFLAGS) -c libtoolexe.c
