@@ -1,5 +1,8 @@
 /*
  * $Log$
+ * Revision 1.19  2001/01/10 22:17:15  trawick
+ * Create the timestamp (.lo) file any time we create a .o.
+ *
  * Revision 1.18  2001/01/04 20:10:57  trawick
  * fix references to http_main in the code which handles a DLL build
  *
@@ -324,9 +327,9 @@ static int insertLine(const char *fname,const char *text)
     while (!feof(old) && !ferror(old) && !ferror(new))
     {
       char inbuf[1024];
-      const char *inline = fgets(inbuf,sizeof inbuf,old);
+      const char *inputline = fgets(inbuf,sizeof inbuf,old);
 
-      if (inline)
+      if (inputline)
       {
         fprintf(new,"%s",inbuf);
       }
@@ -652,7 +655,7 @@ static void dumpLarchive(Larchive_t *la)
 static void loadLarchive(Larchive_t *la,const char *fname)
 {
   FILE *in;
-  char *inline = malloc(100000);
+  char *inputline = malloc(100000);
   char *ch, *tmpch;
 
   memset(la,0,sizeof(*la));
@@ -666,20 +669,20 @@ static void loadLarchive(Larchive_t *la,const char *fname)
   }
   while (!ferror(in) && !feof(in))
   {
-    ch = fgets(inline,100000,in);
+    ch = fgets(inputline,100000,in);
     if (ch)
     {
-      if (inline[strlen(inline) - 1] != '\n')
+      if (inputline[strlen(inputline) - 1] != '\n')
       {
         fprintf(stderr,"line too big in %s\n",fname);
         exit(1);
       }
-      inline[strlen(inline) - 1] = '\0';
-      if (inline[0] == '#')
+      inputline[strlen(inputline) - 1] = '\0';
+      if (inputline[0] == '#')
         continue;
-      if (!memcmp(inline,"input:",6))
+      if (!memcmp(inputline,"input:",6))
       {
-        ch = inline + 6;
+        ch = inputline + 6;
         while (*ch)
         {
           if (isspace(*ch))
@@ -705,13 +708,13 @@ static void loadLarchive(Larchive_t *la,const char *fname)
       }
       fprintf(stderr,
               "syntax error in %s: %s\n",
-              fname,inline);
+              fname,inputline);
     }
   }
 
   fclose(in);
 
-  free(inline); 
+  free(inputline); 
 }
 
 char *getDirPrefix(const char *f)
