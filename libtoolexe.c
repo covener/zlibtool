@@ -1,5 +1,20 @@
 /*
  * $Log$
+ * Revision 1.27  2001/05/15 17:21:34  trawick
+ * OS/390 changes:
+ * . Add logic to split off main() from the rest of the executable, yielding
+ *   a small executable with main() and a .dll with everything else.  This
+ *   uses the new --main=foo and --core-dll=foo flags.
+ *
+ *   Hopefully this can be extended for other platforms later if necessary.
+ *
+ * . Put a list of included objects in a .la file.  The OS/390/split-dll support
+ *   needs this when building the dll.  (This logic was inadvertently deleted
+ *   previously when some BeOS changes were integrated.)
+ *
+ * . Don't rebuild shared objects/DLLs at install time; they were built
+ *   fine the first time.
+ *
  * Revision 1.26  2001/05/14 18:17:45  trawick
  * a fair number of changes from David Reid to:
  * . clean up categorization of input parms, getting rid of the firstInput field
@@ -1105,15 +1120,31 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
 
     int cur;
     char *dirPrefix;
+    char curdir[1024];
+    char curname[1024];
 
     dirPrefix = getDirPrefix(a->s);
+    getcwd(curdir, sizeof curdir - 1);
+
     cur = 0;
     while (cur < la->numInputs)
     {
-      /* hackola! */
-      if (!strcmp(la->inputs[cur],"main.o"))
+      curname[0] = '\0';
+      if (dirPrefix[0] != '/') {
+        strcat(curname, curdir);
+        strcat(curname, "/");
+      }
+      strcat(curname, dirPrefix);
+      strcat(curname, la->inputs[cur]);
+ 
+      if (!strcmp(curname, p->main_obj))
       {
-        /* don't put main.o in the dll; it is stand-alone */
+        /* don't put this object in the dll; it is stand-alone */
+        if (debug >= DEBUG_GORY_DETAILS)
+        {
+          fprintf(debugf,"skipping %s%s... it has main()...\n",
+                  dirPrefix, la->inputs[cur]);
+        }
       }
       else
       {
@@ -1184,14 +1215,6 @@ static int shlibtoolLink(Parms_t *p)
     {
       case INPUT_IS_OBJ:
       case INPUT_IS_LOBJ:
-#if OS390_BUILD
-        /* hackola! */
-        if (!strcmp(p->args[curArg].realInput,"main.o"))
-        {
-          /* don't put main.o in the dll; it is stand-alone */
-          break;
-        }
-#endif
         addArg(&c,p->args[curArg].realInput);
         addArg(&c," ");
         break;
