@@ -1,5 +1,10 @@
 /*
  * $Log$
+ * Revision 1.2  2000/06/30 13:38:38  trawick
+ * Add ability to specify per-target commands in .libtoolconf.
+ * These commands are issued just after a successful build of
+ * the specified target.
+ *
  * Revision 1.1  2000/06/29 15:26:59  trawick
  * initial check-in
  *
@@ -143,10 +148,119 @@ static int readCfgFile(void)
   return rc;
 }
 
+static int insertLine(const char *fname,const char *text)
+{
+  int rc = 0, done = 0;
+  FILE *new = NULL, *old = NULL;
+  const char *tmpname = "libtool.tmp";
+
+  if (!rc)
+  {
+    new = fopen(tmpname,"w");
+    if (!new)
+    {
+      fprintf(stderr,"couldn't create %s: %s\n",tmpname,strerror(errno));
+      rc = 1;
+    }
+  }
+
+  if (!rc)
+  {
+    old = fopen(fname,"r");
+    if (!old)
+    {
+      fprintf(stderr,"couldn't open %s: %s\n",fname,strerror(errno));
+      rc = 1;
+    }
+  }
+
+  if (!rc)
+  {
+    char inbuf[1024];
+
+    if (fgets(inbuf,sizeof inbuf,old))
+    {
+      if (strstr(inbuf,text))
+      {
+        if (debug)
+          printf("already patched...\n");
+        done = 1;
+      }
+      else
+        rewind(old);
+    }
+  }
+
+  if (!rc && !done)
+  {
+    fprintf(new,"%s\n",text);
+    fprintf(new,"#line 1 \"%s\"\n",fname);
+    while (!feof(old) && !ferror(old) && !ferror(new))
+    {
+      char inbuf[1024];
+      const char *inline = fgets(inbuf,sizeof inbuf,old);
+
+      if (inline)
+      {
+        fprintf(new,"%s",inbuf);
+      }
+    }    
+    if (ferror(old) || ferror(new))
+    {
+      fprintf(stderr,"Disk I/O error: %s\n",strerror(errno));
+      rc = 1;
+    }
+  }
+
+  if (new)
+    fclose(new);
+
+  if (old)
+    fclose(old);
+
+  if (!rc && !done)
+  {
+    rc = unlink(fname);
+    if (rc)
+    {
+      rc = 1;
+      fprintf(stderr,"remove %s: %s\n",fname,strerror(errno));
+    }
+  }
+
+  if (!rc && !done)
+  {
+    rc = rename(tmpname,fname); 
+    if (rc)
+    {
+      rc = 1;
+      fprintf(stderr,"rename %s to %s: %s\n",tmpname,fname,strerror(errno));
+    }
+  }
+
+  return rc;
+}
+
+static int editInputFile(const char *inputFile,const char *mode)
+{
+  int rc = 0;
+
+  if (debug)
+    printf("editInputFile(%s,%s)\n",inputFile,mode);
+
+  if (!strcmp(inputFile,"http_main.c") && !strcmp(mode,"compile"))
+  {
+    rc = insertLine("http_main.c","#pragma runopts(STACK(,,ANY))");
+  }
+
+  return rc;
+}
+
 int main(int argc,char **argv)
 {
   int curArg, rc, orc;
   char cmdline[40000];
+  const char *mode = NULL, *inputFile = NULL;
 
   debug = getenv("LIBTOOLDEBUG") != NULL;
 
@@ -180,6 +294,13 @@ int main(int argc,char **argv)
       exit(0);
     }
 
+    if (!memcmp(argv[curArg],"--mode=",strlen("--mode=")))
+    {
+      mode = argv[curArg] + strlen("--mode=");
+      if (debug)
+        printf("mode: %s\n",mode);
+    }
+
     /*
      * Hack: also look for c89, because mm makefiles are
      * using "libtool c89" for Greg.
@@ -201,6 +322,13 @@ int main(int argc,char **argv)
       while (curArg < argc)
       {
         size_t len;
+
+        if (curArg + 1 == argc)
+        {
+          /* last argument */
+
+          inputFile = argv[curArg];
+        }
 
         if (!strcmp(argv[curArg],"-rpath") ||
             !strcmp(argv[curArg],"-version-info"))
@@ -311,15 +439,20 @@ int main(int argc,char **argv)
         ++curArg;
       }
       assert(state == NORM);
-      printf(PGM ": %s\n",cmdline);
-      fflush(stdout);
-      orc = system(cmdline);
-      if (WIFEXITED(orc))
+      if (inputFile && mode)
+        rc = editInputFile(inputFile,mode);
+      if (!rc)
       {
-        rc = WEXITSTATUS(orc);
+        printf(PGM ": %s\n",cmdline);
+        fflush(stdout);
+        orc = system(cmdline);
+        if (WIFEXITED(orc))
+        {
+          rc = WEXITSTATUS(orc);
+        }
+        else
+          rc = 1;
       }
-      else
-        rc = 1;
       if (!rc)
         rc = runCmds(target);
       if (rc)
