@@ -1,5 +1,8 @@
 /*
  * $Log$
+ * Revision 1.9  2000/08/30 15:29:14  trawick
+ * Add support for LIBTOOL_CFLAGS and LIBTOOL_LFLAGS.
+ *
  * Revision 1.8  2000/08/22 21:13:24  trawick
  * fix buildingDll check; before this, it thought we were always building
  * a dll because of the bogus !strstr() logic
@@ -81,7 +84,7 @@ typedef struct
   /* the following fields are always set if this is an input file */
   const char *realInput;
   enum {INPUT_IS_OBJ = 100, INPUT_IS_LOBJ, INPUT_IS_ARCHIVE,
-        INPUT_IS_LARCHIVE, INPUT_IS_IGNORED, NOT_INPUT} inputType;
+        INPUT_IS_LARCHIVE, INPUT_IS_SOURCE, INPUT_IS_IGNORED, NOT_INPUT} inputType;
 } Arg_t;
 
 typedef struct Parms_t
@@ -262,7 +265,7 @@ static int insertLine(const char *fname,const char *text)
   if (!rc && !done)
   {
     fprintf(new,"%s\n",text);
-    fprintf(new,"#line 1 \"%s\"\n",fname);
+    /* fprintf(new,"#line 1 \"%s\"\n",fname); */
     while (!feof(old) && !ferror(old) && !ferror(new))
     {
       char inbuf[1024];
@@ -309,16 +312,16 @@ static int insertLine(const char *fname,const char *text)
   return rc;
 }
 
-static int editInputFile(const char *inputFile,const char *mode)
+static int editInputFile(const char *inputFile)
 {
   int rc = 0;
 
   if (debug)
-    printf("editInputFile(%s,%s)\n",inputFile,mode);
+    printf("editInputFile(%s)\n",inputFile);
 
-  if (!strcmp(inputFile,"http_main.c") && !strcmp(mode,"compile"))
+  if (!strcmp(inputFile,"http_main.c"))
   {
-    rc = insertLine("http_main.c","#pragma runopts(STACK(,,ANY))");
+    rc = insertLine(inputFile,"#pragma runopts(STACK(,,ANY))");
   }
 
   return rc;
@@ -386,6 +389,8 @@ static const char *inputTypeStr(int type)
       return "ARCHIVE";
     case INPUT_IS_LARCHIVE:
       return "LARCHIVE";
+    case INPUT_IS_SOURCE:
+      return "SOURCE";
     case INPUT_IS_IGNORED:
       return "(ignored)";
   }
@@ -873,6 +878,14 @@ static int compile(Parms_t *p)
     {
       if (p->args[curArg].inputType != INPUT_IS_IGNORED)
       {
+        rc = editInputFile(p->args[curArg].realInput);
+        if (rc)
+        {
+          fprintf(stderr,
+                  PGM ": editInputFile(%s)->%d\n",
+                  p->args[curArg].realInput,rc);
+          exit(rc);
+        }
         addArg(&c,p->args[curArg].realInput);
       }
     }
@@ -1056,6 +1069,13 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
         else
           p->outputType = UNKNOWN_OUTPUT;
       }
+      else if (p->mode == COMPILE && 
+               !firstInputSet &&
+               curArg == argc - 1)
+      {
+        p->firstInput = p->numArgs - 1;
+        firstInputSet = 1;
+      }
 
       if (firstInputSet && (p->numArgs - 1) >= p->firstInput)
       {
@@ -1074,7 +1094,7 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
         {
           p->args[p->numArgs - 1].inputType = INPUT_IS_OBJ;
           p->args[p->numArgs - 1].realInput = 
-          p->args[p->numArgs - 1].s;
+            p->args[p->numArgs - 1].s;
         }
         else if (strstr(argv[curArg],".la"))
         {
@@ -1090,11 +1110,17 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
         {
           p->args[p->numArgs - 1].inputType = INPUT_IS_ARCHIVE;
           p->args[p->numArgs - 1].realInput = 
-          p->args[p->numArgs - 1].s;
+            p->args[p->numArgs - 1].s;
         }
         else if (strstr(argv[curArg],".h"))
         {
           p->args[p->numArgs - 1].inputType = INPUT_IS_IGNORED;
+        }
+        else if (strstr(argv[curArg],".c"))
+        {
+          p->args[p->numArgs - 1].inputType = INPUT_IS_SOURCE;
+          p->args[p->numArgs - 1].realInput = 
+            p->args[p->numArgs - 1].s;
         }
         else
         {
@@ -1222,7 +1248,7 @@ int main(int argc,char **argv)
   if (argc == 1)
   {
     fprintf(stderr,
-            PGM ": Please run Jeff's libtool with some parameters!\n");
+            PGM ": Please run OS/390 libtool with some parameters!\n");
     exit(1);
   }
 
@@ -1259,14 +1285,13 @@ int main(int argc,char **argv)
       rc = install(&parms);
       break;
     default:
-      fprintf(stderr,"support needed for mode %s/output %s\n",
+      fprintf(stderr,
+              PGM ": support needed for mode %s/output %s\n",
               modeStr(parms.mode),outputTypeStr(parms.outputType));
       exit(999);
   }
 
 #ifdef OLD
-      if (inputFile && mode)
-        rc = editInputFile(inputFile,mode);
       /* normal command was done here */
       if (!rc)
         rc = runCmds(target);
