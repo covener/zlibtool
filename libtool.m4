@@ -3,4 +3,5 @@ AC_DEFUN(AM_DISABLE_SHARED, [ enable_shared=no] )
 
 #AM_PROG_LIBTOOL
 AC_DEFUN(AM_PROG_LIBTOOL, [ ltconfig] )
+AC_DEFUN(AC_PROG_LIBTOOL, [ dn] )
 
