@@ -1,5 +1,9 @@
 /*
  * $Log$
+ * Revision 1.20  2001/03/29 12:02:16  trawick
+ * rename variable "inline" to "inputline" to stop clashing with a
+ * reserved word on BeOS
+ *
  * Revision 1.19  2001/01/10 22:17:15  trawick
  * Create the timestamp (.lo) file any time we create a .o.
  *
@@ -561,6 +565,7 @@ static const char *escapeArg(const char *add)
       case '}':
       case '[':
       case ']':
+      case '"':
         *newch = '\\';
         ++newch;
         badch = 1;
