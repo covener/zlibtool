@@ -918,7 +918,10 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
       }
       else
       {
-        addArg(c,dirPrefix);
+        if (*(la->inputs[cur]) != '/') {
+          /* if it's not an absolute path, add the directory prefix */
+          addArg(c,dirPrefix);
+        }
         addArg(c,la->inputs[cur]);
         addArg(c," ");
       }
