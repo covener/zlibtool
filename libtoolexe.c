@@ -1,5 +1,13 @@
 /*
  * $Log$
+ * Revision 1.4  2000/08/14 14:59:47  trawick
+ * Add initial support for building Apache 2.0 dsos.
+ *
+ * Known problems with this level of code:
+ *
+ * 1) libtoolexe.c code needs to be split up; too darn big
+ * 2) dsos aren't linked until "make install", which is too late
+ *
  * Revision 1.3  2000/07/05 16:55:33  trawick
  * Add initial (hokey) support for adding text to the top of a source
  * file.  Currently, this is hard-coded to add a pragma runopt to
@@ -324,6 +332,7 @@ static int shlibtoolLink(Parms_t *p)
           "# we don't have the .x file from building core.dll\n");
   fprintf(la,
           "# intended shared object: %s\n",intendedSo);
+  assert(p->args[p->firstInput].realInput);
   fprintf(la,"input:%s\n",p->args[p->firstInput].realInput);
   fclose(la);
 
@@ -406,7 +415,7 @@ static void dumpParms(Parms_t *p)
     printf("\t%-10s %-40s %s\n",
            inputTypeStr(p->args[curArg].inputType),
            p->args[curArg].s,
-           p->args[curArg].realInput);
+           p->args[curArg].realInput ? p->args[curArg].realInput : "N/A");
     ++curArg;
   }
 }
@@ -775,7 +784,12 @@ static int buildExe(Parms_t *p)
     while (curArg < p->numArgs)
     {
       if (curArg >= p->firstInput)
-        addArg(&c,p->args[curArg].realInput);
+      {
+        if (p->args[curArg].inputType != INPUT_IS_IGNORED)
+        {
+          addArg(&c,p->args[curArg].realInput);
+        }
+      }
       else
         addArg(&c,p->args[curArg].s);
       addArg(&c," ");
@@ -807,7 +821,12 @@ static int compile(Parms_t *p)
   while (curArg < p->numArgs)
   {
     if (curArg >= p->firstInput)
-      addArg(&c,p->args[curArg].realInput);
+    {
+      if (p->args[curArg].inputType != INPUT_IS_IGNORED)
+      {
+        addArg(&c,p->args[curArg].realInput);
+      }
+    }
     else
       addArg(&c,p->args[curArg].s);
     addArg(&c," ");
@@ -868,7 +887,10 @@ static int buildArchive(Parms_t *p)
     curArg = p->firstInput;
     while (curArg < p->numArgs)
     {
-      fprintf(la,"%s ",p->args[curArg].realInput);
+      if (p->args[curArg].inputType != INPUT_IS_IGNORED)
+      {
+        fprintf(la,"%s ",p->args[curArg].realInput);
+      }
       ++curArg;
     }
     fprintf(la,"\n");
