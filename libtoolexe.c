@@ -1,5 +1,12 @@
 /*
  * $Log$
+ * Revision 1.17  2001/01/04 19:51:35  trawick
+ * Fix the hack which adds runopts(STACK(,,ANY)) to the file with main().
+ * The name of that file changed from http_main.c to main.c.
+ *
+ * Note that this generic type of name could cause problems when this
+ * libtool is used with other projects.
+ *
  * Revision 1.16  2000/12/28 22:01:29  trawick
  * ignore EEXIST errors from symlink()
  *
@@ -806,9 +813,10 @@ static void addLarchive(Cmdline_t *c,Arg_t *a)
   cur = 0;
   while (cur < la.numInputs)
   {
-    if (!strcmp(la.inputs[cur],"http_main.o"))
+    /* hackola! */
+    if (!strcmp(la.inputs[cur],"main.o"))
     {
-      /* don't put http_main.o in the dll; it is stand-alone */
+      /* don't put main.o in the dll; it is stand-alone */
     }
     else
     {
@@ -896,7 +904,7 @@ static int buildMain(Parms_t *p)
       addArg(&c,extraLflags);
       addArg(&c," ");
     }
-    addArg(&c,"-g -Wl,DLL -o httpd main/http_main.o " CORE_X);
+    addArg(&c,"-g -Wl,DLL -o httpd server/main.o " CORE_X);
   }
 
   if (!rc)
