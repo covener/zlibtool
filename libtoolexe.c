@@ -1,5 +1,9 @@
 /*
  * $Log$
+ * Revision 1.8  2000/08/22 21:13:24  trawick
+ * fix buildingDll check; before this, it thought we were always building
+ * a dll because of the bogus !strstr() logic
+ *
  * Revision 1.7  2000/08/18 20:53:28  trawick
  * Fix snafu in previous commit.
  *
@@ -712,6 +716,9 @@ static int buildMain(Parms_t *p)
   int orc;
   Cmdline_t c = {0};
   int curArg;
+  const char *extraLflags;
+
+  extraLflags = getenv("LIBTOOL_LFLAGS");
 
   /* First, build the dll. */
 
@@ -719,6 +726,11 @@ static int buildMain(Parms_t *p)
   while (curArg < p->numArgs &&
          strcmp(p->args[curArg].s,"-o"))
   {
+    if (curArg == 1 && extraLflags)
+    {
+      addArg(&c,extraLflags);
+      addArg(&c," ");
+    }
     addArg(&c,p->args[curArg].s);
     addArg(&c," ");
     ++curArg;
@@ -764,7 +776,13 @@ static int buildMain(Parms_t *p)
   if (!rc)
   {
     memset(&c,0,sizeof(c));
-    addArg(&c,"cc -g -Wl,DLL -o httpd main/http_main.o " CORE_X);
+    addArg(&c,"cc ");
+    if (extraLflags)
+    {
+      addArg(&c,extraLflags);
+      addArg(&c," ");
+    }
+    addArg(&c,"-g -Wl,DLL -o httpd main/http_main.o " CORE_X);
   }
 
   if (!rc)
@@ -794,10 +812,18 @@ static int buildExe(Parms_t *p)
 
     Cmdline_t c = {0};
     int curArg;
+    const char *extraLflags;
+
+    extraLflags = getenv("LIBTOOL_LFLAGS");
 
     curArg = 0;
     while (curArg < p->numArgs)
     {
+      if (curArg == 1 && extraLflags)
+      {
+        addArg(&c,extraLflags);
+        addArg(&c," ");
+      }
       if (curArg >= p->firstInput)
       {
         if (p->args[curArg].inputType != INPUT_IS_IGNORED)
@@ -825,6 +851,9 @@ static int compile(Parms_t *p)
   int rc = 0;
   int curArg;
   Cmdline_t c = {0};
+  const char *extraCflags;
+
+  extraCflags = getenv("LIBTOOL_CFLAGS");
 
   /*
    * simple compile: just run the specified command
@@ -835,6 +864,11 @@ static int compile(Parms_t *p)
   curArg = 0;
   while (curArg < p->numArgs)
   {
+    if (curArg == 1 && extraCflags)
+    {
+      addArg(&c,extraCflags);
+      addArg(&c," ");
+    }
     if (curArg >= p->firstInput)
     {
       if (p->args[curArg].inputType != INPUT_IS_IGNORED)
