@@ -1594,6 +1594,10 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
       p->linkStatic = 1;
       fprintf(stderr,"warning: -static option ignored\n");
     }
+    else if (!strcmp(argv[curArg],"-no-install"))
+    {
+      fprintf(stderr,"warning: -no-install option ignored\n");
+    }
     else
     {
       if (debug >= DEBUG_GORY_DETAILS)
