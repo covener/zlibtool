@@ -1,5 +1,8 @@
 #
 # $Log$
+# Revision 1.5  2000/08/18 14:26:33  trawick
+# Add a "clean" target.
+#
 # Revision 1.4  2000/08/14 14:59:47  trawick
 # Add initial support for building Apache 2.0 dsos.
 #
@@ -51,8 +54,8 @@ clean:
 	rm -f *.o libtoolexe
 
 libtoolexe: libtoolexe.o
-	c89 $(LFLAGS) -o libtoolexe libtoolexe.o
+	$(CC) $(LFLAGS) -o libtoolexe libtoolexe.o
 
 libtoolexe.o: libtoolexe.c
-	c89 $(CFLAGS) -c libtoolexe.c
+	$(CC) $(CFLAGS) -c libtoolexe.c
 
