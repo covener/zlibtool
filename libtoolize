@@ -2,9 +2,11 @@
 echo "libtoolize $*"
 mydir=`pwd`
 echo "libtoolize was invoked from directory $mydir"
+auxdir_macro=`grep AC_CONFIG_AUX_DIR configure.in`
+auxdir=`echo $auxdir_macro | sed -e 's/AC_CONFIG_AUX_DIR(\(.*\))/\1/'`
 lte=`whence libtoolexe`
-dir=`dirname $lte`
-ln -sf $dir/../share/libtool/config.sub ./config.sub >/dev/null 2>&1
-ln -sf $dir/../share/libtool/config.guess ./config.guess >/dev/null 2>&1
+srcdir=`dirname $lte`
+ln -sf $srcdir/../share/libtool/config.sub ./$auxdir/config.sub >/dev/null 2>&1
+ln -sf $srcdir/../share/libtool/config.guess ./$auxdir/config.guess >/dev/null 2>&1
 exit 0
 
