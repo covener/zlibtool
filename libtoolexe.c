@@ -1,173 +1,55 @@
-/*
- * $Log$
- * Revision 1.30  2002/01/13 01:33:22  trawick
- * get rid of code that added pragma runopts to the start of main.c
+/* ====================================================================
+ * The Apache Software License, Version 1.1
  *
- * it is no longer necessary now that apachectl sets _CEE_RUNOPTS
+ * Copyright (c) 2000-2002 The Apache Software Foundation.  All rights
+ * reserved.
  *
- * Revision 1.29  2001/08/23 22:18:52  trawick
- * initial support for external install programs
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
  *
- * we probably need to fix up .la parameters, but
- * no time for that now
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
  *
- * Revision 1.28  2001/05/15 17:46:49  trawick
- * fix some of the split-dll support so that it uses the --main-obj=foo
- * parameter instead of hard-coding main.o... we were also checking for
- * main.o when building a .so, and that isn't needed...
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
  *
- * Revision 1.27  2001/05/15 17:21:34  trawick
- * OS/390 changes:
- * . Add logic to split off main() from the rest of the executable, yielding
- *   a small executable with main() and a .dll with everything else.  This
- *   uses the new --main=foo and --core-dll=foo flags.
+ * 3. The end-user documentation included with the redistribution,
+ *    if any, must include the following acknowledgment:
+ *       "This product includes software developed by the
+ *        Apache Software Foundation (http://www.apache.org/)."
+ *    Alternately, this acknowledgment may appear in the software itself,
+ *    if and wherever such third-party acknowledgments normally appear.
  *
- *   Hopefully this can be extended for other platforms later if necessary.
+ * 4. The names "Apache" and "Apache Software Foundation" must
+ *    not be used to endorse or promote products derived from this
+ *    software without prior written permission. For written
+ *    permission, please contact apache@apache.org.
  *
- * . Put a list of included objects in a .la file.  The OS/390/split-dll support
- *   needs this when building the dll.  (This logic was inadvertently deleted
- *   previously when some BeOS changes were integrated.)
+ * 5. Products derived from this software may not be called "Apache",
+ *    nor may "Apache" appear in their name, without prior written
+ *    permission of the Apache Software Foundation.
  *
- * . Don't rebuild shared objects/DLLs at install time; they were built
- *   fine the first time.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED.  IN NO EVENT SHALL THE APACHE SOFTWARE FOUNDATION OR
+ * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+ * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ * ====================================================================
  *
- * Revision 1.26  2001/05/14 18:17:45  trawick
- * a fair number of changes from David Reid to:
- * . clean up categorization of input parms, getting rid of the firstInput field
- * . BeOS fixes
- * . fix an OS/390-specific error message
- *
- * changes from Jeff to
- * . export symbols from all objects on OS/390 so we can eliminate the need for
- *   this special logic in Apache and APR
- * . rename LIBTOOLDEBUG environment variable to LIBTOOL_DEBUG
- *
- * Revision 1.25  2001/05/09 18:30:33  trawick
- * integrate [most of] the rest of David Reid's changes to
- * make libtool more generic
- *
- * Revision 1.24  2001/05/01 20:18:42  trawick
- * add some more of David's BeOS port/cleanup
- *
- * Revision 1.23  2001/05/01 18:23:29  trawick
- * a few changes from David Reid for the PLATFORM string and forward declarations
- *
- * Revision 1.22  2001/04/30 19:40:19  trawick
- * Teach the install code to let this command-line work:
- *
- *   libtoolexe --mode=install cp libapr.la /u/trawick/apacheinst/lib
- *
- * We copy libapr.la and .libs/libapr.a to the target directory.
- *
- * Revision 1.21  2001/03/29 12:17:23  trawick
- * Escape quotation marks on the command-line.  This allows invocations like
- *
- *   libtool --mode=compile cc -DVERSION='"a.b.c"' a.c
- *
- * to work.  We turn this into
- *
- *   cc -DVERSION=\"a.b.c\" a.c
- *
- * (We never see the ' characters, of course.)
- *
- * Revision 1.20  2001/03/29 12:02:16  trawick
- * rename variable "inline" to "inputline" to stop clashing with a
- * reserved word on BeOS
- *
- * Revision 1.19  2001/01/10 22:17:15  trawick
- * Create the timestamp (.lo) file any time we create a .o.
- *
- * Revision 1.18  2001/01/04 20:10:57  trawick
- * fix references to http_main in the code which handles a DLL build
- *
- * Revision 1.17  2001/01/04 19:51:35  trawick
- * Fix the hack which adds runopts(STACK(,,ANY)) to the file with main().
- * The name of that file changed from http_main.c to main.c.
- *
- * Note that this generic type of name could cause problems when this
- * libtool is used with other projects.
- *
- * Revision 1.16  2000/12/28 22:01:29  trawick
- * ignore EEXIST errors from symlink()
- *
- * Revision 1.15  2000/12/22 21:59:45  gregames
- *
- * prevent possible storage overlay
- *
- * Revision 1.14  2000/12/22 20:34:22  gregames
- * buildArchive - fix error in the previous patch.  If multiple archives are created
- * in the same directory, we need to handle error from mkdir(".libs")
- *
- * Revision 1.13  2000/12/22 19:52:49  gregames
- *
- * buildArchive - create a .libs directory containing a symlink to ../foo.a after
- * creating the archive
- *
- * Revision 1.12  2000/11/02 22:28:39  trawick
- * Handle compile options mixed in with the input files.
- *
- * TODO: Give every argument an input type.
- *
- * Revision 1.11  2000/10/31 22:02:52  trawick
- * As we build command lines via addArg(), escape any shell metacharacters.
- * This fixes a nasty bug found by Ovies Brabson.
- *
- * If we don't escape shell metacharacters, the shell will try to interpret
- * them.  But this is a compiler command line, and parentheses and other such
- * chars should be passed to the compiler.
- *
- * Putting something like "-Wc,LANGLVL(EXTENDED)" on the libtool command-line
- * now works.
- *
- * Revision 1.10  2000/08/31 15:04:26  trawick
- * Add back support for editInputFile() processing.  It was lost during the
- * big rewrite of command-line parsing.
- *
- * Teach the command-line parser to identify .c files on a compile as input
- * files.
- *
- * Fix a couple of messages to use the PGM prefix for identifying the source
- * of the message.
- *
- * Revision 1.9  2000/08/30 15:29:14  trawick
- * Add support for LIBTOOL_CFLAGS and LIBTOOL_LFLAGS.
- *
- * Revision 1.8  2000/08/22 21:13:24  trawick
- * fix buildingDll check; before this, it thought we were always building
- * a dll because of the bogus !strstr() logic
- *
- * Revision 1.7  2000/08/18 20:53:28  trawick
- * Fix snafu in previous commit.
- *
- * Revision 1.6  2000/08/18 14:27:13  trawick
- * Use "apachecore.dll" instead of "httpdcore.dll" to be more consistent with
- * Win32.
- *
- * Revision 1.5  2000/08/15 17:25:49  trawick
- * Fix some bugs where ignored input files (e.g., *.h) were not
- * really ignored, and a NULL .realInput field was accessed.
- *
- * Revision 1.4  2000/08/14 14:59:47  trawick
- * Add initial support for building Apache 2.0 dsos.
- *
- * Known problems with this level of code:
- *
- * 1) libtoolexe.c code needs to be split up; too darn big
- * 2) dsos aren't linked until "make install", which is too late
- *
- * Revision 1.3  2000/07/05 16:55:33  trawick
- * Add initial (hokey) support for adding text to the top of a source
- * file.  Currently, this is hard-coded to add a pragma runopt to
- * http_main.c.
- *
- * Revision 1.2  2000/06/30 13:38:38  trawick
- * Add ability to specify per-target commands in .libtoolconf.
- * These commands are issued just after a successful build of
- * the specified target.
- *
- * Revision 1.1  2000/06/29 15:26:59  trawick
- * initial check-in
- *
+ * This software consists of voluntary contributions made by many
+ * individuals on behalf of the Apache Software Foundation.  For more
+ * information on the Apache Software Foundation, please see
+ * <http://www.apache.org/>.
  */
 
 static const char rcsid[] = "$Id$";
