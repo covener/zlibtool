@@ -1,5 +1,15 @@
 /*
  * $Log$
+ * Revision 1.10  2000/08/31 15:04:26  trawick
+ * Add back support for editInputFile() processing.  It was lost during the
+ * big rewrite of command-line parsing.
+ *
+ * Teach the command-line parser to identify .c files on a compile as input
+ * files.
+ *
+ * Fix a couple of messages to use the PGM prefix for identifying the source
+ * of the message.
+ *
  * Revision 1.9  2000/08/30 15:29:14  trawick
  * Add support for LIBTOOL_CFLAGS and LIBTOOL_LFLAGS.
  *
@@ -463,6 +473,59 @@ static int removeFile(const char *f,int fatal)
 
 #define max(x,y) ((x) >= (y) ? (x) : (y))
 
+/* escapeArg(): 
+ *
+ * Escape any shell metacharacters as we build the 
+ * command-line.
+ *
+ * Shell metacharacters are sometimes used in compiler
+ * arguments (e.g., parentheses in "-Wl,LANGLVL(ANSI)")
+ * and need to be escaped so that the shell doesn't try  
+ * to evaluate them
+ */
+static const char *escapeArg(const char *add)
+{
+  int badch = 0; /* did we find a char to escape? */
+  char tmparg[1024];
+  char *newch = tmparg;
+  const char *oldch = add;
+
+  assert(strlen(add) * 2 < sizeof(tmparg));
+
+  while (*oldch)
+  {
+    switch(*oldch)
+    {
+      /* check for any characters to escape here! */
+      case '(':
+      case ')':
+      case '~':
+      case '#':
+      case '^':
+      case '&':
+      case '*':
+      case '{':
+      case '}':
+      case '[':
+      case ']':
+        *newch = '\\';
+        ++newch;
+        badch = 1;
+        break;
+    }
+    *newch = *oldch;
+    ++newch;
+    ++oldch;
+  } 
+  *newch = '\0';
+  if (badch) /* at least one metachar, so return our new string
+              * (but not the copy in autodata :) )
+              */
+    return strdup(tmparg);
+  else
+    return add;
+}
+
 typedef struct
 {
   char *s;
@@ -473,6 +536,8 @@ typedef struct
 static void addArg(Cmdline_t *c,const char *add)
 {
   size_t addLen;
+
+  add = escapeArg(add);
 
   assert(add);
   addLen = strlen(add);
