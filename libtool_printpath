@@ -1,0 +1,11 @@
+# libtool_printpath
+# simple enough for Jeff to understand
+# bad enough to only work on OS/390 and BeOS
+
+sys=`uname -s`
+if test $sys = "OS/390"; then
+  whence $1
+else
+  query -a name=$1 | sed 1q
+fi
+

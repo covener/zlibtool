@@ -3,7 +3,7 @@
 echo "ltconfig $*"
 mycwd=`pwd`
 echo "ltconfig invoked from directory $mycwd"
-lte=`whence libtoolexe`
+lte=`libtool_printpath libtoolexe`
 ltdir=`dirname $lte`
 if test ".$1" = ".--output=shlibtool"
 then
@@ -12,7 +12,7 @@ then
 		echo "no need to create symbolic link to shlibtool"
 	else
 		echo "creating a symbolic link to shlibtool..."
-        	shlibtool="$ltdir/shlibtool"
+		shlibtool="$ltdir/shlibtool"
 		ln -s $shlibtool ./shlibtool
 		ls -la ./shlibtool
 	fi

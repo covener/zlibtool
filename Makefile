@@ -1,5 +1,9 @@
 #
 # $Log$
+# Revision 1.6  2001/05/01 18:04:14  trawick
+# don't hard-code c89; use CC instead
+# (from David Reid)
+#
 # Revision 1.5  2000/08/18 14:26:33  trawick
 # Add a "clean" target.
 #
@@ -42,6 +46,8 @@ install: libtoolexe libtool.m4 libtool libtoolize ltconfig config.guess config.s
 	chmod +x $(LIBTOOL_PREFIX)/bin/libtoolize
 	cp -p ltconfig $(LIBTOOL_PREFIX)/bin
 	chmod +x $(LIBTOOL_PREFIX)/bin/ltconfig
+	cp -p libtool_printpath $(LIBTOOL_PREFIX)/bin
+	chmod +x $(LIBTOOL_PREFIX)/bin/libtool_printpath
 	mkdir -p $(LIBTOOL_PREFIX)/share/aclocal
 	cp -p libtool.m4 $(LIBTOOL_PREFIX)/share/aclocal
 	mkdir -p $(LIBTOOL_PREFIX)/share/libtool
