@@ -1,0 +1,6 @@
+#!/bin/sh
+echo "libtoolize $*"
+mydir=`pwd`
+echo "libtoolize was invoked from directory $mydir"
+exit 0
+

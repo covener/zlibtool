@@ -1,0 +1,10 @@
+#!/bin/sh
+
+echo "ltconfig $*"
+mycwd=`pwd`
+echo "ltconfig invoked from directory $mycwd"
+lte=`whence libtoolexe`
+echo "#!/bin/sh" > libtool
+echo "$lte \$*" >> libtool
+chmod +x libtool
+

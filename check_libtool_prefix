@@ -1,0 +1,7 @@
+#!/bin/sh
+if test "a$LIBTOOL_PREFIX" = "a"
+then
+   echo "LIBTOOL_PREFIX must be set."
+   exit 1
+fi
+
