@@ -1,5 +1,16 @@
 /*
  * $Log$
+ * Revision 1.21  2001/03/29 12:17:23  trawick
+ * Escape quotation marks on the command-line.  This allows invocations like
+ *
+ *   libtool --mode=compile cc -DVERSION='"a.b.c"' a.c
+ *
+ * to work.  We turn this into
+ *
+ *   cc -DVERSION=\"a.b.c\" a.c
+ *
+ * (We never see the ' characters, of course.)
+ *
  * Revision 1.20  2001/03/29 12:02:16  trawick
  * rename variable "inline" to "inputline" to stop clashing with a
  * reserved word on BeOS
@@ -1397,41 +1408,74 @@ static int install(Parms_t *p)
   int rc = 0;
   int cur;
   Cmdline_t c = {0};
-  char *so;
-  Larchive_t la;
 
   assert(p->numArgs == 3);
-  assert(p->fromShlibtool);
   assert(!strcmp(p->args[0].s,"cp"));
 
-  so = strdup(p->args[1].s);
-  strcpy(strstr(so,".la"),".so");
-
-  loadLarchive(&la,p->args[1].s);
-
-  addArg(&c,"cc -Wl,DLL -o ");
-  addArg(&c,so);
-  addArg(&c," ");
-  cur = 0;
-  while (cur < la.numInputs)
+  if (p->fromShlibtool)
   {
-    addArg(&c,la.inputs[cur]);
-    addArg(&c," ");
-    ++cur;
-  }
-  addArg(&c,"../../" CORE_X);
+    char *so;
+    Larchive_t la;
 
-  rc = runCmd(p,&c);
+    so = strdup(p->args[1].s);
+    strcpy(strstr(so,".la"),".so");
 
-  if (!rc)
-  {
-    memset(&c,0,sizeof(c));
-    addArg(&c,"cp ");
+    loadLarchive(&la,p->args[1].s);
+
+    addArg(&c,"cc -Wl,DLL -o ");
     addArg(&c,so);
     addArg(&c," ");
-    addArg(&c,p->args[2].s);
+    cur = 0;
+    while (cur < la.numInputs)
+    {
+      addArg(&c,la.inputs[cur]);
+      addArg(&c," ");
+      ++cur;
+    }
+    addArg(&c,"../../" CORE_X);
 
     rc = runCmd(p,&c);
+
+    if (!rc)
+    {
+      memset(&c,0,sizeof(c));
+      addArg(&c,"cp ");
+      addArg(&c,so);
+      addArg(&c," ");
+      addArg(&c,p->args[2].s);
+
+      rc = runCmd(p,&c);
+    }
+  }
+  else
+  {
+    char *a;
+
+    /* not building a dll; copy the foo.la and .libs/foo.a to
+     * the target directory
+     */
+
+    a = (char *)malloc(strlen(p->args[1].s) + strlen(".libs/"));
+    strcpy(a,".libs/");
+    strcat(a,p->args[1].s);
+    strcpy(strstr(a,".la"),".a");
+
+    addArg(&c,"cp ");
+    addArg(&c,p->args[1].s);
+    addArg(&c," ");
+    addArg(&c,p->args[2].s);
+    rc = runCmd(p,&c);
+
+    if (!rc)
+    {
+      memset(&c,0,sizeof(c));
+      addArg(&c,"cp ");
+      addArg(&c,a);
+      addArg(&c," ");
+      addArg(&c,p->args[2].s);
+
+      rc = runCmd(p,&c);
+    }
   }
   
   return rc;
