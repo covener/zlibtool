@@ -75,7 +75,7 @@ static const char rcsid[] = "$Id$";
 /* Note: We really don't want __MVS__ everywhere because we may need to
  *       support a TPF cross-compile in the future.
  */
-#define PLATFORM "OS/three-ninety"
+#define PLATFORM "z/OS"
 #define BEOS_BUILD       0
 #define OS390_BUILD      1
 #define AR_ADD_WITH_REPLACE    "ar -rs "
@@ -621,7 +621,7 @@ static void _getLarchiveShared(char *rv, Larchive_t *la)
   strcat(rv, la->sharedLib);
 }
   
-static void readLarchive(Larchive_t *la, const char *fname)
+static void readLarchive(Larchive_t *la, const char *fname, int must_exist)
 {
   FILE *in;
   char *inputline = malloc(100000);
@@ -636,6 +636,13 @@ static void readLarchive(Larchive_t *la, const char *fname)
   la->fname = strdup(fname);
   la->prefix = strdup(getDirPrefix(fname));
   in = fopen(fname,"r");
+  if (!in && must_exist)
+  {
+    fprintf(stderr, "larchive file %s could not be opened: %s\n",
+            fname, strerror(errno));
+    exit(1);
+  }
+
   if (in)
   {
     while (!ferror(in) && !feof(in))
@@ -772,17 +779,6 @@ static void writeLarchive(Larchive_t *la)
   }
 
   fclose(lafile);
-}
-
-static void loadLarchive(Larchive_t *la,const char *fname)
-{
-  FILE *in;
-  char *inputline = malloc(100000);
-  char *ch, *tmpch;
-
-  readLarchive(la, fname);
-  if (debug >= DEBUG_GORY_DETAILS)
-    dumpLarchive(la);
 }
 
 char *getDirPrefix(const char *f)
@@ -971,7 +967,7 @@ static int shlibtoolLink(Parms_t *p)
   Larchive_t larch;
   
   /* turn foo.la into foo.so to create the archive name */
-  readLarchive(&larch, p->target);
+  readLarchive(&larch, p->target, 0);
   archiveName = strdup(p->target);
   strcpy(intendedSo + strlen(intendedSo) - 3,".so"); 
 
@@ -1360,7 +1356,7 @@ static int buildArchive(Parms_t *p)
   Larchive_t larch;
   
   /* turn foo.la into foo.a to create the archive name */
-  readLarchive(&larch, p->target);
+  readLarchive(&larch, p->target, 0);
   archiveName = strdup(p->target);
   strcpy(archiveName + strlen(archiveName) - 3,".a"); 
 
@@ -1688,7 +1684,7 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
           p->args[p->numArgs - 1].inputType = INPUT_IS_LARCHIVE;
           tmp = strdup(argv[curArg]);
           assert(tmp);
-          readLarchive(&(p->args[p->numArgs - 1].arch), tmp);
+          readLarchive(&(p->args[p->numArgs - 1].arch), tmp, 0);
           /* if we have a static object then enter it as our realInput, but
            * if it's a shared object only, leave it empty.
            */
@@ -1771,7 +1767,7 @@ static int version(Parms_t *p)
    *       number out of the output.
    */
 
-  printf(PGM ": This is libtool 1.3.4 for " PLATFORM ".\n"
+  printf(PGM ": This is libtool 1.3.5 for " PLATFORM ".\n"
          "It acts enough like GNU libtool to allow Apache to be built.\n");
   return 0;
 }
@@ -1861,7 +1857,7 @@ static int install(Parms_t *p)
    *  write it out
    */
   if (p->args[1].inputType == INPUT_IS_LARCHIVE) {
-    readLarchive(&la, p->args[1].s);
+    readLarchive(&la, p->args[1].s, 1);
     la.installPath = strdup(p->args[2].s);
     la.installed = 1;
     updateFnameForInstall(&la);
