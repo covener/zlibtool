@@ -1,6 +1,6 @@
 if test -d libtool
 then
-    tar -cZf libtool.tar.Z libtool --exclude CVS --exclude .cvsignore --exclude bldtar
+    tar -cZf libtool-zOS-httpd-2.2.tar.Z libtool --exclude CVS --exclude .cvsignore --exclude bldtar
 else
     echo "You aren't in the correct directory!"
     exit 1
