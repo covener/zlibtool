@@ -1,6 +1,13 @@
-if test -d libtool
-then
-    tar -cZf libtool-zOS-httpd-2.2.tar.Z libtool --exclude CVS --exclude .cvsignore --exclude bldtar
+#!/bin/sh
+PLATFORM=`uname -s`
+if test -d libtool ; then
+    if [ $PLATFORM = "OS/390" ] ; then
+      # z/OS uses -z not -Z and doesn't exclude
+      echo "tar works different on z/OS, run on unix"
+      exit 1
+    else
+      tar -cZf libtool-zOS-httpd-2.2.tar.Z libtool --exclude CVS --exclude .cvsignore --exclude bldtar
+    fi
 else
     echo "You aren't in the correct directory!"
     exit 1
