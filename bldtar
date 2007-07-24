@@ -2,10 +2,10 @@
 PLATFORM=`uname -s`
 if test -d libtool ; then
     if [ $PLATFORM = "OS/390" ] ; then
-      # z/OS uses -z not -Z and doesn't exclude
-      echo "GNU tar is required; run on Linux"
-      exit 1
+      # z/OS uses -z not -Z and doesn't exclude well so the tarball will have a few extra things in it
+      tar -czf libtool-zOS-httpd-2.2.tar.Z libtool 
     else
+      # apbase/build does a  pax -ofrom=ISO8859-1,to=IBM-1047 -rf to get back to ebcdic 
       tar -cZf libtool-zOS-httpd-2.2.tar.Z libtool --exclude CVS --exclude .cvsignore --exclude bldtar
     fi
 else
