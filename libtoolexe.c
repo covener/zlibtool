@@ -82,6 +82,11 @@ static const char rcsid[] = "$Id$";
 /* we support splitting main() from the rest of the code 
  * to get a small executable plus a big dll. */
 #define SUPPORT_DLL_SPLIT 1
+#define _POSIX_SOURCE
+#include <dirent.h>
+#include <errno.h>
+#include <sys/types.h>
+#undef _POSIX_SOURCE
 #endif
 
 #ifndef PLATFORM
@@ -127,11 +132,12 @@ typedef struct
   char *shLink; /* what we need to pass on the link line... */
   int installed;
   char *installPath;
+  int linkShared;
 } Larchive_t;
 
 typedef struct
 {
-  const char *s; 
+  char *s; 
   /* the following fields are always set if this is an input file */
   const char *realInput;
   Larchive_t arch; /* possible pointer to an Larchive_t */
@@ -161,6 +167,7 @@ typedef struct Parms_t
   unsigned int showVersion : 1;
   unsigned int buildingDll : 1;
   unsigned int linkStatic : 1;
+  unsigned int bldSharedObj : 1;
 #if SUPPORT_DLL_SPLIT
   const char *main_obj;
   const char *core_dll;
@@ -359,7 +366,8 @@ static void dumpParms(Parms_t *p)
          p->linkStatic    ? "static "         : "",
          p->module        ? "module "         : "",
          p->showVersion   ? "show-version "   : "",
-         p->avoidVersion  ? "avoid-version "  : "");
+         p->avoidVersion  ? "avoid-version "  : "",
+         p->bldSharedObj  ? "bldSharedObj "   : "");
   printf("Compiler arguments:\n"); /* this is useless now... */
   printf("Input parameters:\n");
   curArg = 0; 
@@ -492,7 +500,58 @@ static void addArgUnescaped(Cmdline_t *c,const char *add)
 {
   _addArg(c, add, 0);
 }
+#if SUPPORT_DLL_SPLIT
+static char *getXfile(const char *name)
+{
+  char xname[1024];
+  if (name == NULL) return;
+  xname[0]='\0';
+  strcpy(xname, name);
+  if (strstr(xname, ".a") != NULL) {
+     strcpy(strstr(xname, ".a"), ".x");
+     return strdup(xname); 
+  }
+  if (strstr(xname, ".la") != NULL) {
+     strcpy(strstr(xname, ".la"), ".x ");
+     return strdup(xname); 
+  }
+  return xname;  
+}
+static void addXfiles(Cmdline_t *c,const char *larchd)
+{  
+  char *xname;
+  struct dirent *entry;
+  DIR *ldir;
+  char buf[1024]="";
 
+  if ((ldir = opendir(larchd)) == NULL) {
+      fprintf(debugf, "Warning- could not open directory %s to create .x files errno %d\n",larchd,errno);
+      errno=0;
+      return;
+  }
+
+  while ((entry = readdir(ldir)) != NULL) {
+      if (entry->d_name[0] != '.') {
+          xname = strdup(entry->d_name); 
+         if (!strncmp(xname+strlen(xname)-2, ".x", 2)) {
+              if (debug >= DEBUG_GORY_DETAILS)
+                fprintf(stderr, " adding x file %s from a directory with -L\n",xname); 
+              strcpy(buf, '\0');
+              strcpy(buf, larchd);
+              strcat(buf, "/");
+              strcat(buf, xname);
+              addArg(c, buf);
+              addArg(c, " ");  
+         }
+      }
+  } 
+
+  if (closedir(ldir) == -1) {
+      assert(!errno);
+  }
+  return;
+}
+#endif /* SUPPORT_DLL_SPLIT */
 static int runCmd(Parms_t *p,Cmdline_t *c)
 {
   int rc = 0, orc;
@@ -535,9 +594,11 @@ static void _addStaticArg(Cmdline_t *c, Larchive_t *la)
 
 static void _addSharedArg(Cmdline_t *c, Larchive_t *la, Parms_t *p)
 {
+  char xname[1024];
   if (debug >= DEBUG_GORY_DETAILS)
     fprintf(debugf, "trying to add shared object from %s\n", la->fname);
 
+#if BEOS_BUILD
   addArg(c, "-L");
   if (la->installed){
     addArg(c, la->installPath);
@@ -549,18 +610,27 @@ static void _addSharedArg(Cmdline_t *c, Larchive_t *la, Parms_t *p)
     if (strlen(tmp) == 0)
       strcpy(tmp, ".\0");
     addArg(c, tmp);
-#if BEOS_BUILD
     /* as we're not installed, add an rpath if we're building an exe... */
     if (p->outputType == OUTPUT_IS_EXE){
       addArg(c, " -Xlinker -rpath ");
       addArg(c, tmp);
     }
-#endif
   }
+#endif
+#if SUPPORT_DLL_SPLIT
+  xname[0]='\0';
+  strcpy(xname, la->fname);
+  /*assert(strstr(xname,".la"));*/
+  if (strstr(xname,".la") != NULL) {
+    strcpy(strstr(xname, ".la"), ".x ");
+  }
+  addArg(c, xname);
   addArg(c, " ");
+#else
   addArg(c, "-l");
   addArg(c, la->shLink);
   addArg(c, " ");
+#endif /* SUPPORT_DLL_SPLIT */
 }
 
 static char *_getstrdata(char *line)
@@ -689,6 +759,15 @@ static void readLarchive(Larchive_t *la, const char *fname, int must_exist)
             }
             continue;
         }
+#if SUPPORT_DLL_SPLIT
+        if (strstr(inputline,"addsharedlib=")) {
+            parm = _getstrdata(inputline);
+            if (parm) {
+                la->linkShared = (strstr(parm,"yes") ? 1 : 0);
+            }
+            continue;
+        }
+#endif
         if (!memcmp(inputline,"input:",6))
         {
           ch = inputline + 6;
@@ -733,7 +812,7 @@ static void writeLarchive(Larchive_t *la)
 
   if (debug >= DEBUG_GORY_DETAILS)
     fprintf(debugf, "Writing the libtool archive file %s\n", la->fname);
-      
+
   lafile = fopen(la->fname,"w");
   if (!lafile)
   {
@@ -765,6 +844,24 @@ static void writeLarchive(Larchive_t *la)
       "# Directory that this library needs to be installed in\n"
       "libdir='%s'\n"
       "\n", la->installPath ? la->installPath : "");
+#if SUPPORT_DLL_SPLIT
+  /* Kluge to be replaced with setting la->linkShared iff
+   * xyz.la is in a directory specified with a -L parm, i.e.
+   * turn on linkShared in libaprutil-1.la because -L/..../srclib/apr-util */
+  if (strstr(la->fname,"libapr") ||
+      strstr(la->fname,"libparutil") ||
+      strstr(la->fname,"libexpat")) {
+      fprintf(lafile, 
+      "# Indicate that this shared library needs to be added to main\n"
+      "addsharedlib=%s\n"
+      "\n", "yes");
+  } else {
+       fprintf(lafile, 
+      "# Indicate that this shared library needs to be added to main\n"
+      "addsharedlib=%s\n"
+      "\n", "no");
+  }     
+#endif
 
   if (la->numInputs > 0)
   {
@@ -900,6 +997,16 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
     dirPrefix = getDirPrefix(a->s);
     getcwd(curdir, sizeof curdir - 1);
 
+    if (la->linkShared) {
+      curname[0] = '\0';
+      if (dirPrefix[0] != '/') {
+        strcat(curname, curdir);
+        strcat(curname, "/");
+      }
+      strcat(curname, dirPrefix);
+      addXfiles(c, curname); 
+      return;
+    } 
     cur = 0;
     while (cur < la->numInputs)
     {
@@ -930,7 +1037,7 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
         addArg(c," ");
       }
       ++cur;
-    } 
+    }	
     return;
   }
 #endif /* SUPPORT_DLL_SPLIT */
@@ -949,7 +1056,12 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
    */
   if (la->staticLib && la->sharedLib) {
       /* add the shared library... */
-      _addSharedArg(c, la, p);
+      if (p->linkStatic) {
+          _addStaticArg(c, la);
+      }
+      else {
+          _addSharedArg(c, la, p);
+      }
   }
   
   if (debug >= DEBUG_GORY_DETAILS)
@@ -1005,15 +1117,19 @@ static int shlibtoolLink(Parms_t *p)
       case NOT_INPUT:
       case INPUT_IS_TARGET: /* we may have a .la... */
         /* Skip this; we don't care about it for one reason or another. */
+        curArg++;
         break;
       case INPUT_IS_OPTION:
         addArg(&c,p->args[curArg].s); 
         addArg(&c," ");
+#if SUPPORT_DLL_SPLIT
+        if (strstr(p->args[curArg].s,"-L")) {
+          addXfiles(&c,p->args[curArg].s + 2);
+        }
+#endif
         break;
       default:
-        fprintf(stderr,"Unexpected input type %d at %d\n",
-                p->args[curArg].inputType,__LINE__);
-        exit(1);
+        break;
     }
     ++curArg;
   }
@@ -1047,7 +1163,7 @@ static int shlibtoolLink(Parms_t *p)
     larch.installPath = strdup(p->rpath);
     writeLarchive(&larch);
   }
-  
+
   return rc;
 }
 
@@ -1062,6 +1178,8 @@ static int buildMain(Parms_t *p)
   const char *extraLflags;
   char *core_x;
   int debug = 0;
+  char *nametoadd;
+  Larchive_t larch;
 
   assert(p->core_dll);
   core_x = strdup(p->core_dll);
@@ -1120,7 +1238,17 @@ static int buildMain(Parms_t *p)
         addArchive(&c,&p->args[curArg]);
         break;
       case INPUT_IS_LARCHIVE:
-        addLarchive(&c,&p->args[curArg], p);
+        readLarchive(&larch, p->args[curArg].s , 0);
+        if (larch.linkShared) { 
+            nametoadd = getXfile(p->args[curArg].s);
+            assert(nametoadd);
+            addArg(&c,nametoadd);
+            addArg(&c," ");
+            addArg(&linkMainCmd,nametoadd);
+            addArg(&linkMainCmd," ");
+        } else { 
+            addLarchive(&c,&p->args[curArg], p); 
+        } 
         break;
       case INPUT_IS_IGNORED:
       case NOT_INPUT:
@@ -1197,6 +1325,12 @@ static int buildExe(Parms_t *p)
       case INPUT_IS_OPTION:
       case INPUT_IS_TARGET: /* we don't mung the target... */
         addArg(&c,p->args[curArg].s);
+#if SUPPORT_DLL_SPLIT
+        if ((!p->linkStatic) && (strstr(p->args[curArg].s,"-L"))) {
+          addArg(&c," ");
+          addXfiles(&c,p->args[curArg].s + 2);
+        }
+#endif
         break;
       case INPUT_IS_LARCHIVE:
         addLarchive(&c, &p->args[curArg], p);
@@ -1354,7 +1488,7 @@ static int buildArchive(Parms_t *p)
   char *archiveName;
   Cmdline_t c = {0}, cmd = {0};
   Larchive_t larch;
-  
+
   /* turn foo.la into foo.a to create the archive name */
   readLarchive(&larch, p->target, 0);
   archiveName = strdup(p->target);
@@ -1362,6 +1496,7 @@ static int buildArchive(Parms_t *p)
 
   removeFile(archiveName,1);
 
+#ifndef SUPPORT_DLL_SPLIT
   /* Check if we need to use a seperate sub directory for the objects... */
   while (curArg < p->numArgs)
   {
@@ -1372,13 +1507,14 @@ static int buildArchive(Parms_t *p)
     }
     curArg++;
   }
+#endif
 
   /* If we're using a sub directory, create it... */
   if (use_subdir){
     Cmdline_t cp = {0};
     addArg(&cp, "mkdir .tmp");
     runCmd(p,&cp);
-  }  
+  }
 
   /* build ar command-line */
   addArg(&c,AR_ADD_WITH_REPLACE);
@@ -1402,21 +1538,26 @@ static int buildArchive(Parms_t *p)
         break;
 #endif
       case INPUT_IS_LARCHIVE:
-        if(!isLarchiveStatic(&(p->args[curArg].arch))){
-          _addSharedArg(&c, &(p->args[curArg].arch), p);
-          break;
-        } else
-          p->args[curArg].inputType = INPUT_IS_ARCHIVE;       
+        if (!p->fromShlibtool) {
+          if (!isLarchiveStatic(&(p->args[curArg].arch))) {
+            _addSharedArg(&c, &(p->args[curArg].arch), p);
+            break;
+          } else 
+            p->args[curArg].inputType = INPUT_IS_ARCHIVE;   
+        }    
+        break;        
       case INPUT_IS_ARCHIVE:
         /* OK, so if it's an archive, we expand it into the
          * temp directory, if it's just an object we copy it into
          * the directory.  We link against all .o's we find there,
          * so this may need looking at.
          */
-        addArg(&cmd,"cd .tmp;ar x ../");
-        addArg(&cmd, p->args[curArg].realInput);
-        addArg(&cmd, ";cd ..");
-        runCmd(p, &cmd);
+        if (!p->fromShlibtool) {
+          addArg(&cmd,"cd .tmp;ar x ../"); 
+          addArg(&cmd, p->args[curArg].realInput);
+          addArg(&cmd, ";cd ..");
+          runCmd(p, &cmd);
+        }
         break;        
       case INPUT_IS_OBJ:
       case INPUT_IS_LOBJ:
@@ -1509,6 +1650,9 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
     if (debug >= DEBUG_GORY_DETAILS)
       fprintf(debugf,"arg %d: %s\n",curArg,argv[curArg]);
    
+#if SUPPORT_DLL_SPLIT
+    p->bldSharedObj = 1;
+#endif
     if (!strcmp(argv[curArg],"--from-shlibtool"))
     {
       p->fromShlibtool = 1;
@@ -1606,7 +1750,6 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
     else if (!strcmp(argv[curArg],"-static"))
     {
       p->linkStatic = 1;
-      fprintf(stderr,"warning: -static option ignored\n");
     }
     else if (!strcmp(argv[curArg],"-no-install"))
     {
@@ -1649,6 +1792,9 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
         if (!strcmp(p->target + targetLen - 3,".la"))
         {
           p->outputType = OUTPUT_IS_ARCHIVE;
+#if SUPPORT_DLL_SPLIT 
+        p->fromShlibtool = 1; 
+#endif
         }
         else if (!strcmp(p->target + targetLen - 3,".lo"))
         {
@@ -1738,13 +1884,19 @@ static int link(Parms_t *p)
   switch(p->outputType)
   {
     case OUTPUT_IS_ARCHIVE:
+#if SUPPORT_DLL_SPLIT
+      rc = buildArchive(p);
+      if (!p->linkStatic) { 
+        rc = shlibtoolLink(p);
+      }
+#else
       if (p->fromShlibtool)
         rc = shlibtoolLink(p);
       else
         rc = buildArchive(p);
+#endif
       break;
     case OUTPUT_IS_EXE:
-      assert(!p->fromShlibtool);
       rc = buildExe(p);
       break;
     default:
@@ -1767,7 +1919,7 @@ static int version(Parms_t *p)
    *       number out of the output.
    */
 
-  printf(PGM ": This is libtool 1.3.5 for " PLATFORM ".\n"
+  printf(PGM ": This is libtool 1.3.8 for " PLATFORM ".\n"
          "It acts enough like GNU libtool to allow Apache to be built.\n");
   return 0;
 }
@@ -1863,8 +2015,11 @@ static int install(Parms_t *p)
     updateFnameForInstall(&la);
     writeLarchive(&la);
   }
-
+#if SUPPORT_DLL_SPLIT
+  if (la.sharedLib )             
+#else
   if (p->fromShlibtool)
+#endif  
   {
     char *so;
 
@@ -1874,7 +2029,8 @@ static int install(Parms_t *p)
     _buildCPcommand(&c, so, p->args[2].s);
     rc = runCmd(p,&c);
   }
-  else
+  /*else  need tweak for non-390?*/
+  if (p->linkStatic)  
   {
     char *a;
 
