@@ -517,7 +517,7 @@ static char *getXfile(const char *name)
   }
   return xname;  
 }
-static void addXfiles(Cmdline_t *c,const char *larchd)
+static void addXfiles(Parms_t *p, Cmdline_t *c,const char *larchd)
 {  
   char *xname;
   struct dirent *entry;
@@ -525,9 +525,11 @@ static void addXfiles(Cmdline_t *c,const char *larchd)
   char buf[1024]="";
 
   if ((ldir = opendir(larchd)) == NULL) {
-      fprintf(debugf, "Warning- could not open directory %s to create .x files errno %d\n",larchd,errno);
+      Cmdline_t cp = {0};
+      if (debug >= DEBUG_GORY_DETAILS)
+        fprintf(debugf, "Warning- could not open directory %s to create .x files errno %d\n",larchd,errno);
       errno=0;
-      return;
+     return; 
   }
 
   while ((entry = readdir(ldir)) != NULL) {
@@ -854,7 +856,7 @@ static void writeLarchive(Larchive_t *la)
       fprintf(lafile, 
       "# Indicate that this shared library needs to be added to main\n"
       "addsharedlib=%s\n"
-      "\n", "yes");
+      "\n", "yes"); 
   } else {
        fprintf(lafile, 
       "# Indicate that this shared library needs to be added to main\n"
@@ -1004,7 +1006,7 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
         strcat(curname, "/");
       }
       strcat(curname, dirPrefix);
-      addXfiles(c, curname); 
+      addXfiles(p, c, curname); 
       return;
     } 
     cur = 0;
@@ -1077,7 +1079,10 @@ static int shlibtoolLink(Parms_t *p)
   int curArg;
   Cmdline_t c = {0};
   Larchive_t larch;
-  
+  char curdir[1024];
+  int Saved_curArgs[10] = {0}; 
+  int i = 0;
+
   /* turn foo.la into foo.so to create the archive name */
   readLarchive(&larch, p->target, 0);
   archiveName = strdup(p->target);
@@ -1086,7 +1091,6 @@ static int shlibtoolLink(Parms_t *p)
   removeFile(intendedSo,1);
 
   curArg = 0;
-
 #if OS390_BUILD
   addArg(&c,p->args[curArg].s);
   addArg(&c," ");
@@ -1120,11 +1124,16 @@ static int shlibtoolLink(Parms_t *p)
         curArg++;
         break;
       case INPUT_IS_OPTION:
-        addArg(&c,p->args[curArg].s); 
-        addArg(&c," ");
+      /*  addArg(&c,p->args[curArg].s); 
+        addArg(&c," ");*/
 #if SUPPORT_DLL_SPLIT
+        /* Add the *.x files at the end to insure they are not intertwined with options */
         if (strstr(p->args[curArg].s,"-L")) {
-          addXfiles(&c,p->args[curArg].s + 2);
+           i++;
+           Saved_curArgs[i] = curArg;
+        } else { 
+           addArg(&c,p->args[curArg].s); 
+           addArg(&c," ");
         }
 #endif
         break;
@@ -1141,17 +1150,25 @@ static int shlibtoolLink(Parms_t *p)
   addArg(&c,intendedSo);
 #endif
 #if SUPPORT_DLL_SPLIT
+  while (i > 0) {
+    addXfiles(p, &c,p->args[Saved_curArgs[i]].s + 2);
+    i--; 
+  }
   if (p->core_dll)
   {
     char *core_x;
+    char *dirPrefix;
 
     core_x = strdup(p->core_dll);
     strcpy(strstr(core_x,".dll"),".x");
 
     addArg(&c,core_x);
+    addArg(&c," ");
+    dirPrefix = getDirPrefix(core_x);
+    dirPrefix[strlen(dirPrefix)- 1] = '\0';
+    addXfiles(p, &c, dirPrefix);
   }
 #endif /* SUPPORT_DLL_SPLIT */
-
   /* Run the command and make a library!! */
   rc = runCmd(p,&c);
 
@@ -1295,7 +1312,8 @@ static int buildExe(Parms_t *p)
   Cmdline_t c = {0};
   int curArg;
   const char *extraLflags;
-
+  int Saved_curArgs[64] = {0};
+  int i = 0;
   assert(p->mode == LINK);
   assert(p->outputType == OUTPUT_IS_EXE);
 
@@ -1323,28 +1341,41 @@ static int buildExe(Parms_t *p)
       case INPUT_IS_IGNORED:
         break;
       case INPUT_IS_OPTION:
-      case INPUT_IS_TARGET: /* we don't mung the target... */
-        addArg(&c,p->args[curArg].s);
 #if SUPPORT_DLL_SPLIT
-        if ((!p->linkStatic) && (strstr(p->args[curArg].s,"-L"))) {
-          addArg(&c," ");
-          addXfiles(&c,p->args[curArg].s + 2);
+        /* Add the *.x files at the end to insure they are not intertwined with options */
+        if (strstr(p->args[curArg].s,"-L")) {
+          if (!p->linkStatic) {
+            i++;
+            Saved_curArgs[i] = curArg;
+          } 
+        } else {
+           addArg(&c,p->args[curArg].s);
+           addArg(&c," ");
         }
 #endif
+        break;
+      case INPUT_IS_TARGET: /* we don't mung the target... */
+        addArg(&c,p->args[curArg].s);
+        addArg(&c," ");
         break;
       case INPUT_IS_LARCHIVE:
         addLarchive(&c, &p->args[curArg], p);
         break;
       case NOT_INPUT:
         addArg(&c,p->args[curArg].s);
+        addArg(&c," ");
         break;
       default:
         addArg(&c,p->args[curArg].realInput);
+        addArg(&c," ");
     }
-    addArg(&c," ");
     ++curArg;
   }
-
+  addArg(&c," ");
+  while (i > 0) {
+    addXfiles(p, &c,p->args[Saved_curArgs[i]].s + 2);
+    i--;
+  }
   if (!rc)
   {
     rc = runCmd(p,&c);
@@ -1507,7 +1538,7 @@ static int buildArchive(Parms_t *p)
     }
     curArg++;
   }
-#endif
+#endif 
 
   /* If we're using a sub directory, create it... */
   if (use_subdir){
@@ -1529,7 +1560,7 @@ static int buildArchive(Parms_t *p)
        * Now that we're not using the firstInput flag we should really
        * skip the options as we only need to pass files into ar on BeOS.
        */
-#if !BEOS_BUILD
+#if !BEOS_BUILD && !SUPPORT_DLL_SPLIT
       case INPUT_IS_OPTION:
         if (strstr(p->args[curArg].s,"-l")){
           addArg(&c,p->args[curArg].s);
@@ -1601,19 +1632,32 @@ static int buildArchive(Parms_t *p)
   /* now add a .libs directory, and create a symlink in it to foo.a */
   if (!rc)
   {
-    char oldPath[260], newPath[260];
-
+    char oldPath[260], newPath[260], tmpName[260];
+    char *slashPos;
+   
     rc = mkdir(".libs", 0755);
     if (rc && errno != EEXIST)
     {
       perror("libtoolexe: buildArchive: mkdir");
       exit(rc);
     }
-    strcpy(oldPath, "../");
-    strcat(oldPath, archiveName);
-    strcpy(newPath, ".libs/");
-    strcat(newPath, archiveName);
-       
+    /* Check for absolute or relative directory */
+    slashPos = strchr(archiveName, '/');
+    if ( (slashPos - archiveName) == 0) {
+      newPath[0] = oldPath[0] = '\0';
+      strcat(oldPath, archiveName);
+      strcat(newPath, archiveName);
+      slashPos = strrchr(newPath, '/');
+      strcpy(tmpName, slashPos); 
+      *slashPos = '\0';
+      strcat(newPath, "/.libs/");
+      
+    } else {
+      strcpy(oldPath, "../");
+      strcat(oldPath, archiveName);
+      strcpy(newPath, ".libs/");
+      strcat(newPath, archiveName);
+    }
     rc = symlink(oldPath, newPath);
     if (rc && errno != EEXIST)
     {
@@ -1623,7 +1667,7 @@ static int buildArchive(Parms_t *p)
     else
       rc = 0;
   }
-
+  
   if (!rc)
   {
     larch.staticLib = strdup(archiveName);
@@ -1919,7 +1963,7 @@ static int version(Parms_t *p)
    *       number out of the output.
    */
 
-  printf(PGM ": This is libtool 1.3.8 for " PLATFORM ".\n"
+  printf(PGM ": This is libtool 1.3.9 for " PLATFORM ".\n"
          "It acts enough like GNU libtool to allow Apache to be built.\n");
   return 0;
 }
@@ -2070,7 +2114,6 @@ int main(int argc,char **argv)
   debug = getenv("LIBTOOL_DEBUG") != NULL;
   if (debug)
     debug = atoi(getenv("LIBTOOL_DEBUG"));
-
   if (argc == 1)
   {
     fprintf(stderr,
