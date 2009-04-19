@@ -458,6 +458,12 @@ static void addArg(Cmdline_t *c,const char *add)
   _addArg(c, add, 1);
 }
 
+static void addArgSpace(Cmdline_t *c,const char *add)
+{
+  _addArg(c, add, 1);
+  _addArg(c, " ", 1);
+}
+
 static void addArgUnescaped(Cmdline_t *c,const char *add)
 {
   _addArg(c, add, 0);
@@ -1955,12 +1961,13 @@ static int install2(Parms_t *p)
   int rc = 0;
   Cmdline_t cmdline = {0};
 
+  assert(p->numArgs >= 3);
+
   curArg = 0;
+ 
   while (curArg < p->numArgs)
   {
-    addArg(&cmdline,p->args[curArg].s);
-    addArg(&cmdline," ");
-    ++curArg;
+    addArgSpace(&cmdline,p->args[curArg++].s);
   }
   rc = runCmd(p,&cmdline);
   return rc;
