@@ -2030,48 +2030,23 @@ static int install(Parms_t *p)
     la.installed = 1;
     updateFnameForInstall(&la);
     writeLarchive(&la);
-  }
-#if SUPPORT_DLL_SPLIT
-  if (la.sharedLib )             
-#else
-  if (p->fromShlibtool)
-#endif  
-  {
-    char *so;
+    
+    /* install the .so if any */    
+    if (la.sharedLib){
+      _buildCPcommand(&c, la.sharedLib, p->args[2].s);
+      runCmd(p,&c);
+    } 
 
-    so = strdup(p->args[1].s);
-    strcpy(strstr(so,".la"),".so");
-
-    _buildCPcommand(&c, so, p->args[2].s);
-    rc = runCmd(p,&c);
-  }
-  /*else  need tweak for non-390?*/
-  if (p->linkStatic)  
-  {
-    char *a;
-
-    /* not building a dll; copy the foo.la and .libs/foo.a to
-     * the target directory
-     */
-
+    /* for static links, install the .a */
+    if (p->linkStatic) {
+      assert(la.staticLib);
+      _buildCPcommand(&c, la.staticLib, p->args[2].s);
+      runCmd(p,&c);
+    }
+  } 
+  else {      /* installing something other than an .la */
     _buildCPcommand(&c, p->args[1].s, p->args[2].s);
     rc = runCmd(p,&c);
-      
-    if (p->args[1].inputType == INPUT_IS_LARCHIVE){
-      if (la.staticLib && la.sharedLib){
-        _buildCPcommand(&c, la.sharedLib, p->args[2].s);
-        runCmd(p,&c);
-        _buildCPcommand(&c, la.staticLib, p->args[2].s);
-        runCmd(p,&c);
-
-      } else if (la.staticLib){
-        _buildCPcommand(&c, la.staticLib, p->args[2].s);
-        runCmd(p,&c);
-      }else{
-        _buildCPcommand(&c, la.sharedLib, p->args[2].s);
-        runCmd(p,&c);
-      }
-    }        
   }
   
   return rc;
