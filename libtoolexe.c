@@ -1956,7 +1956,7 @@ static void _buildCPcommand(Cmdline_t *c, const char * a1, const char *a2)
 }
 
 /*
- * findFilesForInstall() parses the --mode=install args
+ * findFilesForInstall parses the --mode=install args
  * the input Cmdline_t is updated with the install command and options   
  * returns:
  *    the index of the first source file
@@ -2042,13 +2042,13 @@ static int install(Parms_t *p)
   Cmdline_t c = {0};
   Larchive_t la;
 
+  src = findFilesForInstall(p, &c);
+  dst = p->numArgs - 1;
+  assert((dst - src) == 1);
+  
   if (p->numArgs != 3 ||
       strcmp(p->args[0].s,"cp")) 
   {
-    src = findFilesForInstall(p, &c);
-    dst = p->numArgs - 1;
-    assert((dst - src) == 1);
-  
     addArgSpace(&c, p->args[src].s);
     addArg(&c, p->args[dst].s);
 
@@ -2062,28 +2062,28 @@ static int install(Parms_t *p)
    *  modify it
    *  write it out to the target directory
    */
-  if (p->args[1].inputType == INPUT_IS_LARCHIVE) {
-    readLarchive(&la, p->args[1].s, 1);
-    la.installPath = strdup(p->args[2].s);
+  if (p->args[src].inputType == INPUT_IS_LARCHIVE) {
+    readLarchive(&la, p->args[src].s, 1);
+    la.installPath = strdup(p->args[dst].s);
     la.installed = 1;
     updateFnameForInstall(&la);
     writeLarchive(&la);
     
     /* install the .so if any */    
     if (la.sharedLib){
-      _buildCPcommand(&c, la.sharedLib, p->args[2].s);
+      _buildCPcommand(&c, la.sharedLib, p->args[dst].s);
       runCmd(p,&c);
     } 
 
     /* for static links, install the .a */
     if (p->linkStatic) {
       assert(la.staticLib);
-      _buildCPcommand(&c, la.staticLib, p->args[2].s);
+      _buildCPcommand(&c, la.staticLib, p->args[dst].s);
       runCmd(p,&c);
     }
   } 
   else {      /* installing something other than an .la */
-    _buildCPcommand(&c, p->args[1].s, p->args[2].s);
+    _buildCPcommand(&c, p->args[src].s, p->args[dst].s);
     rc = runCmd(p,&c);
   }
   
