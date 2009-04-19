@@ -1955,11 +1955,17 @@ static void _buildCPcommand(Cmdline_t *c, const char * a1, const char *a2)
   addArg(c, a2);
 }
 
-static int install2(Parms_t *p)
+/*
+ * findFilesForInstall() parses the --mode=install args
+ * the input Cmdline_t is updated with the install command and options   
+ * returns:
+ *    the index of the first source file
+ */
+
+static int findFilesForInstall(Parms_t *p, Cmdline_t *c)
 {
   int curArg = 0;
   int rc = 0;
-  Cmdline_t cmdline = {0};
   char *opt;
   char *optsWithArg = "g" /* group */
                       "m" /* mode, currently in use */
@@ -1969,34 +1975,27 @@ static int install2(Parms_t *p)
   assert(p->numArgs >= 3);
 
   /* add the install command, e.g. install.sh */ 
-  addArgSpace(&cmdline,p->args[curArg++].s);
+  addArgSpace(c, p->args[curArg++].s);
    
   /* add any install command options */
   opt = p->args[curArg].s;
   while (opt[0] == '-')
   {
-    addArgSpace(&cmdline,opt);
+    addArgSpace(c, opt);
     curArg++;
     /* 
-     * svn's install.sh -t TARGET_DIR is not supported 
-     * it reorders the source and target, and isn't used yet
+     * svn's install.sh -t TARGET_DIR reorders the source and target files.
+     * blow up if someone starts using it
      */ 
     assert(opt[1] != 't'); 
     if (strchr(optsWithArg, opt[1])) {  
-      addArgSpace(&cmdline,p->args[curArg++].s); /* add the option's arg */
+      addArgSpace(c, p->args[curArg++].s); /* add the option's arg */
     }
     assert((p->numArgs - curArg) >= 2);
     opt = p->args[curArg].s;
   }
    
-  /* done with the options and their args.  add the source and target*/
-  assert((p->numArgs - curArg) == 2);
-  
-  addArgSpace(&cmdline,p->args[curArg++].s);
-  addArgSpace(&cmdline,p->args[curArg++].s);
-
-  rc = runCmd(p,&cmdline);
-  return rc;
+  return curArg;         /* the first file */
 }
 
 static void updateFnameForInstall(Larchive_t *la)
@@ -2039,15 +2038,21 @@ static void updateFnameForInstall(Larchive_t *la)
 static int install(Parms_t *p)
 {
   int rc = 0;
-  int cur;
+  int src, dst;
   Cmdline_t c = {0};
-  char *so;
   Larchive_t la;
 
   if (p->numArgs != 3 ||
       strcmp(p->args[0].s,"cp")) 
   {
-    return install2(p);
+    src = findFilesForInstall(p, &c);
+    dst = p->numArgs - 1;
+    assert((dst - src) == 1);
+  
+    addArgSpace(&c, p->args[src].s);
+    addArg(&c, p->args[dst].s);
+
+    return runCmd(p, &c);
   }
   assert(p->numArgs == 3);
   assert(!strcmp(p->args[0].s,"cp"));
