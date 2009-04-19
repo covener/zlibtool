@@ -1957,18 +1957,44 @@ static void _buildCPcommand(Cmdline_t *c, const char * a1, const char *a2)
 
 static int install2(Parms_t *p)
 {
-  int curArg;
+  int curArg = 0;
   int rc = 0;
   Cmdline_t cmdline = {0};
+  char *opt;
+  char *optsWithArg = "g" /* group */
+                      "m" /* mode, currently in use */
+                      "o" /* owner */
+                      ;
 
   assert(p->numArgs >= 3);
 
-  curArg = 0;
- 
-  while (curArg < p->numArgs)
+  /* add the install command, e.g. install.sh */ 
+  addArgSpace(&cmdline,p->args[curArg++].s);
+   
+  /* add any install command options */
+  opt = p->args[curArg].s;
+  while (opt[0] == '-')
   {
-    addArgSpace(&cmdline,p->args[curArg++].s);
+    addArgSpace(&cmdline,opt);
+    curArg++;
+    /* 
+     * svn's install.sh -t TARGET_DIR is not supported 
+     * it reorders the source and target, and isn't used yet
+     */ 
+    assert(opt[1] != 't'); 
+    if (strchr(optsWithArg, opt[1])) {  
+      addArgSpace(&cmdline,p->args[curArg++].s); /* add the option's arg */
+    }
+    assert((p->numArgs - curArg) >= 2);
+    opt = p->args[curArg].s;
   }
+   
+  /* done with the options and their args.  add the source and target*/
+  assert((p->numArgs - curArg) == 2);
+  
+  addArgSpace(&cmdline,p->args[curArg++].s);
+  addArgSpace(&cmdline,p->args[curArg++].s);
+
   rc = runCmd(p,&cmdline);
   return rc;
 }
