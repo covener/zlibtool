@@ -1644,7 +1644,7 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
 {
   int rc = 0;
   int curArg;
-  const char *modeStr;
+  const char *modeStr, *tagStr;
   enum {NORM, TARGET} state = NORM;
 
   p->mode = 0; /* not a valid mode */
@@ -1760,6 +1760,16 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
     else if (!strcmp(argv[curArg],"-no-install"))
     {
       fprintf(stderr,"warning: -no-install option ignored\n");
+    }
+    else if (!memcmp(argv[curArg],"--tag=", 6))
+    {
+      tagStr = argv[curArg] + 6;
+      if (!strcmp(tagStr,"CC"))
+        ;                
+      else
+      {
+        fprintf(stderr, PGM ": unknown tag: %s\n",argv[curArg]);
+      }
     }
     else
     {
