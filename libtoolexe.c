@@ -2022,7 +2022,7 @@ static int install(Parms_t *p)
   /* If it's a libtool archive, 
    *  read it in
    *  modify it
-   *  write it out
+   *  write it out to the target directory
    */
   if (p->args[1].inputType == INPUT_IS_LARCHIVE) {
     readLarchive(&la, p->args[1].s, 1);
