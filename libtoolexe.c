@@ -2034,6 +2034,31 @@ static void updateFnameForInstall(Larchive_t *la)
   la->sharedLib = old_sharedLib;
 }
 
+static const char *getDir(const char *path) 
+{
+  int rc;
+  struct stat finfo;
+  
+  rc = stat(path, &finfo);
+
+  if (rc == 0)
+  {
+    if (S_ISDIR(finfo.st_mode)) 
+      return path;
+    else
+      return getDirPrefix(path);
+  }
+    
+  switch(errno)
+  {
+    case ENOENT: 
+      return getDirPrefix(path);
+    default:
+      perror("libtool: getDir: stat");
+      exit(rc);
+  }
+}
+
 static int install(Parms_t *p)
 {
   int rc = 0;
@@ -2041,6 +2066,7 @@ static int install(Parms_t *p)
   char *src, *dst;
   Cmdline_t c = {0};
   Larchive_t la;
+  const char *dstdir = 0;
 
   s = findFilesForInstall(p, &c);
   d = p->numArgs - 1;
@@ -2058,21 +2084,24 @@ static int install(Parms_t *p)
    */
   if (p->args[s].inputType == INPUT_IS_LARCHIVE) {
     readLarchive(&la, src, 1);
-    la.installPath = strdup(dst);
+    if (!dstdir) {
+      dstdir = getDir(dst);
+    }
+    la.installPath = strdup(dstdir);
     la.installed = 1;
     updateFnameForInstall(&la);
     writeLarchive(&la);
     
     /* install the .so if any */    
     if (la.sharedLib){
-      rc = _installOne(p, &c, la.sharedLib, dst);
+      rc = _installOne(p, &c, la.sharedLib, dstdir);
     } 
 
     /* for static links, install the .a */
     if (p->linkStatic && !rc) {
       assert(!la.sharedLib); /* FIXME c contains the sharedLib files */
       assert(la.staticLib);
-      rc = _installOne(p, &c, la.staticLib, dst);
+      rc = _installOne(p, &c, la.staticLib, dstdir);
     }
   } 
   else {      /* installing something other than an .la */
