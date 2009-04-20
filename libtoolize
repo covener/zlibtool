@@ -19,8 +19,14 @@
 echo "libtoolize $*"
 mydir=`pwd`
 echo "libtoolize was invoked from directory $mydir"
-auxdir_macro=`grep AC_CONFIG_AUX_DIR configure.in`
-auxdir=`echo $auxdir_macro | sed -e 's/AC_CONFIG_AUX_DIR(\(.*\))/\1/'`
+ac_in_files="configure.in configure.ac"
+ac_in=`ls $ac_in_files 2>/dev/null | head -1`
+if [ x$ac_in = x ] ; then
+  echo "libtoolize: couldn't find an autoconf input file: $ac_in_files" >&2
+  exit 1
+fi
+auxdir_macro=`grep AC_CONFIG_AUX_DIR $ac_in`
+auxdir=`echo $auxdir_macro | perl -pe 's/AC_CONFIG_AUX_DIR\(\[?(.*?)\]?\)/$1/'` 
 lte=`libtool_printpath libtoolexe`
 srcdir=`dirname $lte`
 ln -sf $srcdir/../share/libtool/config.sub ./$auxdir/config.sub >/dev/null 2>&1
