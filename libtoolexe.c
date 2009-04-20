@@ -1946,13 +1946,11 @@ static int version(Parms_t *p)
   return 0;
 }
 
-static void _buildCPcommand(Cmdline_t *c, const char * a1, const char *a2)
+static int _installOne(Parms_t *p, Cmdline_t *c, const char * a1, const char *a2)
 {
-  memset(c,0,sizeof(Cmdline_t));
-  addArg(c, "cp ");
-  addArg(c, a1);
-  addArg(c, " ");
+  addArgSpace(c, a1);
   addArg(c, a2);
+  return runCmd(p, c);
 }
 
 /*
@@ -2038,53 +2036,46 @@ static void updateFnameForInstall(Larchive_t *la)
 static int install(Parms_t *p)
 {
   int rc = 0;
-  int src, dst;
+  int s, d;
+  char *src, *dst;
   Cmdline_t c = {0};
   Larchive_t la;
 
-  src = findFilesForInstall(p, &c);
-  dst = p->numArgs - 1;
-  assert((dst - src) == 1);
+  s = findFilesForInstall(p, &c);
+  d = p->numArgs - 1;
+  assert((d - s) == 1);
+
+  src = p->args[s].s;
+  dst = p->args[d].s;
   
-  if (p->numArgs != 3 ||
-      strcmp(p->args[0].s,"cp")) 
-  {
-    addArgSpace(&c, p->args[src].s);
-    addArg(&c, p->args[dst].s);
-
-    return runCmd(p, &c);
-  }
-  assert(p->numArgs == 3);
-  assert(!strcmp(p->args[0].s,"cp"));
-
   /* If it's a libtool archive, 
    *  read it in
    *  modify it
    *  write it out to the target directory
+   *
+   * then install the .so and/or .a it references
    */
-  if (p->args[src].inputType == INPUT_IS_LARCHIVE) {
-    readLarchive(&la, p->args[src].s, 1);
-    la.installPath = strdup(p->args[dst].s);
+  if (p->args[s].inputType == INPUT_IS_LARCHIVE) {
+    readLarchive(&la, src, 1);
+    la.installPath = strdup(dst);
     la.installed = 1;
     updateFnameForInstall(&la);
     writeLarchive(&la);
     
     /* install the .so if any */    
     if (la.sharedLib){
-      _buildCPcommand(&c, la.sharedLib, p->args[dst].s);
-      runCmd(p,&c);
+      rc = _installOne(p, &c, la.sharedLib, dst);
     } 
 
     /* for static links, install the .a */
-    if (p->linkStatic) {
+    if (p->linkStatic && !rc) {
+      assert(!la.sharedLib); /* FIXME c contains the sharedLib files */
       assert(la.staticLib);
-      _buildCPcommand(&c, la.staticLib, p->args[dst].s);
-      runCmd(p,&c);
+      rc = _installOne(p, &c, la.staticLib, dst);
     }
   } 
   else {      /* installing something other than an .la */
-    _buildCPcommand(&c, p->args[src].s, p->args[dst].s);
-    rc = runCmd(p,&c);
+    rc = _installOne(p, &c, src, dst);
   }
   
   return rc;
