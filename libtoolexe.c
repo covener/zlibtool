@@ -1965,8 +1965,8 @@ static int findFilesForInstall(Parms_t *p, Cmdline_t *c)
   int curArg = 0;
   int rc = 0;
   char *opt;
-  char *optsWithArg = "g" /* group */
-                      "m" /* mode, currently in use */
+  char *optsWithArg = "m" /* mode, currently in use */
+                      "g" /* group */
                       "o" /* owner */
                       ;
 
@@ -1981,13 +1981,14 @@ static int findFilesForInstall(Parms_t *p, Cmdline_t *c)
   {
     addArgSpace(c, opt);
     curArg++;
-    /* 
-     * svn's install.sh -t TARGET_DIR reorders the source and target files.
-     * blow up if someone starts using it
-     */ 
-    assert(opt[1] != 't'); 
     if (strchr(optsWithArg, opt[1])) {  
       addArgSpace(c, p->args[curArg++].s); /* add the option's arg */
+    } else {
+      /* 
+       * svn's install.sh -t TARGET_DIR reorders the source and target files.
+       * blow up if someone starts using it
+       */ 
+      assert(opt[1] != 't'); 
     }
     assert((p->numArgs - curArg) >= 2);
     opt = p->args[curArg].s;
