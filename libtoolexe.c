@@ -2097,12 +2097,20 @@ static int install(Parms_t *p)
       rc = _installOne(p, &c, la.sharedLib, dstdir);
     } 
 
-    /* for static links, install the .a */
+#ifndef SUPPORT_DLL_SPLIT  
+    /* for static links, install the .a
+     *
+     * the following block of code is currently dead for Apache httpd on z/OS 
+     *  grep "mode=install.*-static" apbase_build.log    returns no hits.
+     * but GNU libtool always installs the .a even if there is a .so,
+     *    so keep it around.
+     */
     if (p->linkStatic && !rc) {
       assert(!la.sharedLib); /* FIXME c contains the sharedLib files */
       assert(la.staticLib);
       rc = _installOne(p, &c, la.staticLib, dstdir);
     }
+#endif
   } 
   else {      /* installing something other than an .la */
     rc = _installOne(p, &c, src, dst);
