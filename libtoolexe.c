@@ -1098,9 +1098,6 @@ static int shlibtoolLink(Parms_t *p)
         if (strstr(p->args[curArg].s,"-L")) {
            i++;
            Saved_curArgs[i] = curArg;
-        } else { 
-           addArg(&c,p->args[curArg].s); 
-           addArg(&c," ");
         }
 #endif
         break;
