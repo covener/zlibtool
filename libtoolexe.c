@@ -1092,8 +1092,7 @@ static int shlibtoolLink(Parms_t *p)
         curArg++;
         break;
       case INPUT_IS_OPTION:
-      /*  addArg(&c,p->args[curArg].s); 
-        addArg(&c," ");*/
+        addArgSpace(&c,p->args[curArg].s); 
 #if SUPPORT_DLL_SPLIT
         /* Add the *.x files at the end to insure they are not intertwined with options */
         if (strstr(p->args[curArg].s,"-L")) {
