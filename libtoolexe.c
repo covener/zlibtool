@@ -1089,7 +1089,6 @@ static int shlibtoolLink(Parms_t *p)
       case NOT_INPUT:
       case INPUT_IS_TARGET: /* we may have a .la... */
         /* Skip this; we don't care about it for one reason or another. */
-        curArg++;
         break;
       case INPUT_IS_OPTION:
         addArgSpace(&c,p->args[curArg].s); 
