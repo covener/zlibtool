@@ -1311,12 +1311,8 @@ static int buildExe(Parms_t *p)
             i++;
             Saved_curArgs[i] = curArg;
           } 
-        } else {
-           addArg(&c,p->args[curArg].s);
-           addArg(&c," ");
         }
 #endif
-        break;
       case INPUT_IS_TARGET: /* we don't mung the target... */
         addArg(&c,p->args[curArg].s);
         addArg(&c," ");
