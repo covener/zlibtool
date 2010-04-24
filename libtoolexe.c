@@ -130,6 +130,7 @@ typedef struct Parms_t
   unsigned int buildingDll : 1;
   unsigned int linkStatic : 1;
   unsigned int bldSharedObj : 1;
+  unsigned int ignoreRC : 1;
 #if SUPPORT_DLL_SPLIT
   const char *main_obj;
   const char *core_dll;
@@ -329,6 +330,7 @@ static void dumpParms(Parms_t *p)
          p->module        ? "module "         : "",
          p->showVersion   ? "show-version "   : "",
          p->avoidVersion  ? "avoid-version "  : "",
+         p->ignoreRC      ? "ignore-rc "      : "",
          p->bldSharedObj  ? "bldSharedObj "   : "");
   printf("Compiler arguments:\n"); /* this is useless now... */
   printf("Input parameters:\n");
@@ -1135,6 +1137,10 @@ static int shlibtoolLink(Parms_t *p)
   /* Run the command and make a library!! */
   rc = runCmd(p,&c);
 
+  if (p->ignoreRC) {
+    rc = 0;
+  }
+
   /*
    * Create the output file
    */
@@ -1671,6 +1677,10 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
     else if (!strcmp(argv[curArg],"--version"))
     {
       p->showVersion = 1;
+    }
+    else if (!strcmp(argv[curArg],"--ignore-rc"))
+    {
+      p->ignoreRC = 1;
     }
     else if (!memcmp(argv[curArg],"--main=",7))
     {
