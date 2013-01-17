@@ -19,5 +19,5 @@ Notes:
 
 Bugs:
 
-  Eats option after (maybe?) -L.
+  Eats option after *.la
 
