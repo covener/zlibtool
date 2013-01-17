@@ -12,3 +12,12 @@ Building Apache on z/OS:
 1) Please see http://www.apache.org/~trawick/apache-2-on-os390.html
 
 
+
+Notes:
+
+  This is a later version of what's used in 8.5 and earlier IHS builds, via apache.rtp/IHS/buildstools/
+
+Bugs:
+
+  Eats option after (maybe?) -L.
+
