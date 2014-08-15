@@ -107,6 +107,7 @@ typedef struct
    *    INPUT_IS_OBJ         Normal object (.o)
    *    INPUT_IS_LOBJ        This is a libtool object (.lo)
    *    INPUT_IS_ARCHIVE     It's a static archive (.a)
+   *    INPUT_IS_DIRECT_ARCHIVE     It's a static archive (.a) and we want it static not expanded by this tool
    *    INPUT_IS_LARCHIVE    It's a libtool archive (.la)
    *    INPUT_IS_SOURCE      This is a source file (.c or .cc)
    *    INPUT_IS_IGNORED     Ignore this input (normally .h file)
@@ -114,7 +115,7 @@ typedef struct
    *    INPUT_IS_OPTION      It's an option
    *    INPUT_IS_TARGET      This option was the build target
    */     
-  enum {INPUT_IS_OBJ = 100, INPUT_IS_LOBJ, INPUT_IS_ARCHIVE,
+  enum {INPUT_IS_OBJ = 100, INPUT_IS_LOBJ, INPUT_IS_ARCHIVE, INPUT_IS_DIRECT_ARCHIVE,
         INPUT_IS_LARCHIVE, INPUT_IS_SOURCE, INPUT_IS_IGNORED, NOT_INPUT,
         INPUT_IS_OPTION, INPUT_IS_TARGET} inputType;
 } Arg_t;
@@ -284,6 +285,8 @@ static const char *inputTypeStr(int type)
       return "LOBJ";
     case INPUT_IS_ARCHIVE:
       return "ARCHIVE";
+    case INPUT_IS_DIRECT_ARCHIVE:
+      return "DARCHIVE";
     case INPUT_IS_LARCHIVE:
       return "(Libtool archive)";
     case INPUT_IS_SOURCE:
@@ -1052,6 +1055,8 @@ static int shlibtoolLink(Parms_t *p)
   char curdir[1024];
   int Saved_curArgs[10] = {0}; 
   int i = 0;
+  int len = 0;
+  char *tmp = NULL;
 
   /* turn foo.la into foo.so to create the archive name */
   readLarchive(&larch, p->target, 0);
@@ -1083,6 +1088,13 @@ static int shlibtoolLink(Parms_t *p)
         break;
       case INPUT_IS_ARCHIVE:
         addArchive(&c,&p->args[curArg]);
+        break;
+      case INPUT_IS_DIRECT_ARCHIVE:
+        len = strlen(p->args[curArg].realInput);
+        tmp = strdup(p->args[curArg].realInput);
+        tmp[len-1] = 'a';
+        addArg(&c,tmp);
+        addArg(&c," ");
         break;
       case INPUT_IS_LARCHIVE:
         addLarchive(&c,&p->args[curArg], p);
@@ -1865,6 +1877,13 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
         else if (strstr(argv[curArg],".a"))
         {
           p->args[p->numArgs - 1].inputType = INPUT_IS_ARCHIVE;
+          p->args[p->numArgs - 1].realInput = 
+            p->args[p->numArgs - 1].s;
+        }
+
+        else if (strstr(argv[curArg],".A"))
+        {
+          p->args[p->numArgs - 1].inputType = INPUT_IS_DIRECT_ARCHIVE;
           p->args[p->numArgs - 1].realInput = 
             p->args[p->numArgs - 1].s;
         }
