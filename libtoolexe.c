@@ -1961,8 +1961,8 @@ static int version(Parms_t *p)
    *       number out of the output.
    */
 
-  printf(PGM ": This is libtool 1.3.9 for " PLATFORM ".\n"
-         "It acts enough like GNU libtool to allow Apache to be built.\n");
+  printf(PGM ": This is libtool 1.3.9 for " PLATFORM " %s\n"
+         "It acts enough like GNU libtool to allow Apache to be built.\n", rcsid);
   return 0;
 }
 
