@@ -824,7 +824,7 @@ static void writeLarchive(Larchive_t *la)
    * xyz.la is in a directory specified with a -L parm, i.e.
    * turn on linkShared in libaprutil-1.la because -L/..../srclib/apr-util */
   if (strstr(la->fname,"libapr") ||
-      strstr(la->fname,"libparutil") ||
+      strstr(la->fname,"libpaprutil") ||
       strstr(la->fname,"libexpat")) {
       fprintf(lafile, 
       "# Indicate that this shared library needs to be added to main\n"
