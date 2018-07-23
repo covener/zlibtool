@@ -19,6 +19,12 @@
 echo "libtoolize $*"
 mydir=`pwd`
 echo "libtoolize was invoked from directory $mydir"
+if [ $# -eq 1 ]; then
+  if [ $1 = "--version" ]; then
+    echo "libtoolize (zlibtool pretending:) 1.5.26"
+    exit 0
+  fi
+fi
 ac_in_files="configure.in configure.ac"
 ac_in=`ls $ac_in_files 2>/dev/null | head -1`
 if [ x$ac_in = x ] ; then
@@ -33,5 +39,6 @@ ln -sf $srcdir/../share/libtool/config.sub ./$auxdir/config.sub >/dev/null 2>&1
 ln -sf $srcdir/../share/libtool/config.guess ./$auxdir/config.guess >/dev/null 2>&1
 ln -sf $srcdir/libtool ./libtool >/dev/null 2>&1
 ln -sf $srcdir/ltconfig ./$auxdir/ltconfig >/dev/null 2>&1
+ln -sf $srcdir/../share/aclocal/libtool.m4 build/libtool.m4
 exit 0
 
