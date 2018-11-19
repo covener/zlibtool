@@ -1569,6 +1569,7 @@ static int buildArchive(Parms_t *p)
         break;        
       case INPUT_IS_OBJ:
       case INPUT_IS_LOBJ:
+        /* Whoops, you've probably got a loop in whatever generates input: in the .la */
         assert(larch.numInputs < sizeof larch.inputs / sizeof larch.inputs[0]);
         larch.inputs[larch.numInputs] = strdup(p->args[curArg].realInput);
         ++larch.numInputs;
