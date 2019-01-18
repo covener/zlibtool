@@ -38,6 +38,7 @@ srcdir=`dirname $lte`
 ln -sf $srcdir/../share/libtool/config.sub ./$auxdir/config.sub >/dev/null 2>&1
 ln -sf $srcdir/../share/libtool/config.guess ./$auxdir/config.guess >/dev/null 2>&1
 ln -sf $srcdir/libtool ./libtool >/dev/null 2>&1
+ln -sf $srcdir/libtoolexe ./libtoolexe >/dev/null 2>&1
 ln -sf $srcdir/ltconfig ./$auxdir/ltconfig >/dev/null 2>&1
 ln -sf $srcdir/../share/aclocal/libtool.m4 build/libtool.m4
 exit 0
