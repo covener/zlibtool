@@ -58,6 +58,7 @@ static const char rcsid[] = "$Id$";
 #define PGM "libtoolexe"
 
 #define MAX_LINE 1024
+#define BUF_SIZE 8192
 
 #define MAX_CMDS 100
 
@@ -1522,6 +1523,25 @@ static int compile(Parms_t *p)
   return rc;
 }
 
+
+static char* mybasename(char *s)
+{
+   char *result = strdup(s);
+   int len = strlen(result);
+   char *p = strrchr(result, '/');
+   if (p) return ++p;
+   return result;
+}
+
+static char* mydirname(char *s)
+{
+   char *result = strdup(s);
+   int len = strlen(result);
+   char *p = strrchr(result, '/');
+   if (p) *p = '\0';
+   return strdup(".");
+}
+
 static int buildArchive(Parms_t *p)
 {
   int rc = 0;
@@ -1645,31 +1665,42 @@ static int buildArchive(Parms_t *p)
   if (!rc)
   {
     char oldPath[260], newPath[260], tmpName[260];
+    char buf[BUF_SIZE] = "";
+    char *basename = NULL;
+    char *dirname = NULL;
     char *slashPos;
+    char *libdir = NULL;
    
-    rc = mkdir(".libs", 0755);
+    basename = mybasename(archiveName);
+    dirname = mydirname(archiveName);
+    libdir = strdup(dirname);
+    strcat(libdir, "/.libs/");
+    *newPath = '\0';
+    strcpy(newPath, libdir);
+    strcat(newPath, basename);
+
+    rc = mkdir(libdir, 0755);
     if (rc && errno != EEXIST)
     {
-      perror("libtoolexe: buildArchive: mkdir");
+      snprintf(buf, BUF_SIZE-1, "libtoolexe: buildArchive: mkdir '%s' failed", libdir);
+      perror(buf);
       exit(rc);
     }
+
     /* Check for absolute or relative directory */
-    slashPos = strchr(archiveName, '/');
-    if ( (slashPos - archiveName) == 0) {
-      newPath[0] = oldPath[0] = '\0';
+    if (*archiveName == '0') {
+      oldPath[0] = '\0';
       strcat(oldPath, archiveName);
       strcat(newPath, archiveName);
       slashPos = strrchr(newPath, '/');
       strcpy(tmpName, slashPos); 
       *slashPos = '\0';
       strcat(newPath, "/.libs/");
-      
     } else {
       strcpy(oldPath, "../");
-      strcat(oldPath, archiveName);
-      strcpy(newPath, ".libs/");
-      strcat(newPath, archiveName);
+      strcat(oldPath, basename);
     }
+
     rc = symlink(oldPath, newPath);
     if (rc && errno != EEXIST)
     {
