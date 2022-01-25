@@ -1168,17 +1168,20 @@ static int shlibtoolLink(Parms_t *p)
 static int buildMain(Parms_t *p)
 {
   int rc = 0;
+  int i = 0;
   int orc;
   Cmdline_t c = {0};
   Cmdline_t linkMainCmd = {0};
   int curArg;
   const char *extraLflags;
   char *core_x;
-  int debug = 0;
+  int localdebug = 0;
   char *nametoadd;
   Larchive_t larch;
+  int Saved_curArgs[64] = {0};
 
-  if (debug >= DEBUG_GORY_DETAILS) fprintf(stderr, "libtoolexe debug: buildMain\n");
+
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf, "buildMain\n");
 
   assert(p->core_dll);
   core_x = strdup(p->core_dll);
@@ -1232,6 +1235,7 @@ static int buildMain(Parms_t *p)
  */
   while (curArg < p->numArgs)
   {
+    if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf, "libtoolexe debug: input is %s %s\n", inputTypeStr(p->args[curArg].inputType), p->args[curArg].s);
     switch(p->args[curArg].inputType)
     {
       case INPUT_IS_OBJ:
@@ -1259,11 +1263,21 @@ static int buildMain(Parms_t *p)
       case NOT_INPUT:
         /* Skip this; we don't care about it for one reason or another. */
         break;
+
+
       case INPUT_IS_OPTION:
+        /* Add the -l files at the end to insure they do not precede obj arguments */
+        if (strstr(p->args[curArg].s,"-l")) {
+            i++;
+            Saved_curArgs[i] = curArg++;
+            if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildMain: save arg %s\n", p->args[curArg].s);
+            continue;
+        }
+
         addArg(&c,p->args[curArg].s); 
         addArg(&c," ");
         if (!strcmp(p->args[curArg].s,"-g"))
-          debug = 1;
+          localdebug = 1;
         /* We need to use same options on the link of the main executable.
          */
         addArg(&linkMainCmd,p->args[curArg].s);
@@ -1277,6 +1291,14 @@ static int buildMain(Parms_t *p)
     ++curArg;
   }
 
+  while (i > 0) {
+    if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildMain: restore arg %s\n", p->args[Saved_curArgs[i]].s);
+    addArg(&c, p->args[Saved_curArgs[i]].s);
+    addArg(&c, " ");
+    i--;
+  }
+
+
   rc = runCmd(p,&c);
 
   if (!rc)
@@ -1286,6 +1308,7 @@ static int buildMain(Parms_t *p)
     addArg(&linkMainCmd," ");
     addArg(&linkMainCmd,core_x);
     addArg(&linkMainCmd," ");
+
     rc = runCmd(p,&linkMainCmd);
   }
 
@@ -1304,10 +1327,12 @@ static int buildExe(Parms_t *p)
   assert(p->mode == LINK);
   assert(p->outputType == OUTPUT_IS_EXE);
 
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildExe %d args %d\n", p->main_obj, p->numArgs);
 #if SUPPORT_DLL_SPLIT
   if (p->main_obj)
     return buildMain(p);
 #endif /* SUPPORT_DLL_SPLIT */
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"didn't buildMain\n");
 
   /*
    * simple link-edit: just run the specified command
@@ -1328,6 +1353,7 @@ static int buildExe(Parms_t *p)
       case INPUT_IS_IGNORED:
         break;
       case INPUT_IS_OPTION:
+        if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildExe input option %s", p->args[curArg].s);
 #if SUPPORT_DLL_SPLIT
         /* Add the *.x files at the end to insure they are not intertwined with options */
         if (strstr(p->args[curArg].s,"-L")) {
@@ -1349,6 +1375,7 @@ static int buildExe(Parms_t *p)
         addArg(&c," ");
         break;
       default:
+        if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildExe input %s", p->args[curArg].realInput);
         addArg(&c,p->args[curArg].realInput);
         addArg(&c," ");
     }
@@ -1364,6 +1391,7 @@ static int buildExe(Parms_t *p)
     rc = runCmd(p,&c);
   }
 
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildExe return");
   return rc;
 }
 
@@ -1675,8 +1703,7 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
   {
     p->args[curArg].inputType = NOT_INPUT;
     
-    if (debug >= DEBUG_GORY_DETAILS)
-      fprintf(debugf,"arg %d: %s\n",curArg,argv[curArg]);
+    if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"arg %d: %s\n",curArg,argv[curArg]);
    
 #if SUPPORT_DLL_SPLIT
     p->bldSharedObj = 1;
