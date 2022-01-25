@@ -1,21 +1,16 @@
-libtool for building Apache 2.2.x on z/OS
+libtool for building Apache on z/OS
 
 Installation of this libtool on z/OS:
 
-1) unpack the tarball via pax since the contents are ASCII
 2) make
 3) export LIBTOOL_PREFIX=xxx     (e.g., /usr/local)
 4) make install
+
 
 Building Apache on z/OS:
 
 1) Please see http://www.apache.org/~trawick/apache-2-on-os390.html
 
-
-
-Notes:
-
-  This is a later version of what's used in 8.5 and earlier IHS builds, via apache.rtp/IHS/buildstools/
 
 Bugs:
 
