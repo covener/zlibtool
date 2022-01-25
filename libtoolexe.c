@@ -69,7 +69,7 @@ struct CmdRec
 
 static int numCmds;
 static struct CmdRec cmds[MAX_CMDS];
-static int debug;
+static int debug = 0;
 #define DEBUG_GORY_DETAILS 3
 #define DEBUG_OVERVIEW     2
 #define DEBUG_SHOWCMD      1
@@ -1076,7 +1076,6 @@ static int shlibtoolLink(Parms_t *p)
   addArg(&c,intendedSo);
   addArg(&c," ");
 #endif
-
   while (curArg < p->numArgs)
   {
     switch(p->args[curArg].inputType)
@@ -1179,6 +1178,8 @@ static int buildMain(Parms_t *p)
   char *nametoadd;
   Larchive_t larch;
 
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(stderr, "libtoolexe debug: buildMain\n");
+
   assert(p->core_dll);
   core_x = strdup(p->core_dll);
   strcpy(strstr(core_x,".dll"),".x");
@@ -1213,10 +1214,16 @@ static int buildMain(Parms_t *p)
   ++curArg;
   ++curArg;
 
+  /* apachecore */
   addArg(&c,"-Wl,DLL ");
   addArg(&c,"-o ");
   addArg(&c,p->core_dll);
   addArg(&c," ");
+
+  /* make sure -o appears before input files for the link of httpd */
+  addArg(&linkMainCmd,"-Wl,DLL -o ");
+  addArg(&linkMainCmd,"httpd");
+  addArg(&linkMainCmd," ");
 
   /* Now, process the input files... */
 
@@ -1274,12 +1281,11 @@ static int buildMain(Parms_t *p)
 
   if (!rc)
   {
-    addArg(&linkMainCmd,"-Wl,DLL -o ");
-    addArg(&linkMainCmd,"httpd");
-    addArg(&linkMainCmd," ");
+    /* now it's time for the inputs */
     addArg(&linkMainCmd,p->main_obj);
     addArg(&linkMainCmd," ");
     addArg(&linkMainCmd,core_x);
+    addArg(&linkMainCmd," ");
     rc = runCmd(p,&linkMainCmd);
   }
 
