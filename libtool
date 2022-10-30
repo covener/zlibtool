@@ -16,5 +16,31 @@
 # limitations under the License.
 #
 #
+
+dirname="s,/[^/]*$,,"
+basename="s,^.*/,,"
+
+
+# func_dirname file append nondir_replacement
+# Compute the dirname of FILE.  If nonempty, add APPEND to the result,
+# otherwise set result to NONDIR_REPLACEMENT.
+func_dirname ()
+{
+    case ${1} in
+      */*) func_dirname_result="${1%/*}${2}" ;;
+      *  ) func_dirname_result="${3}" ;;
+    esac
+} # Extended-shell func_dirname implementation
+
+
 shlibpath_var=LIBPATH
-exec libtoolexe $*
+func_dirname "$0"
+exe="$func_dirname_result/libtoolexe"
+
+if [ -x $exe ]; then
+  # during build, use relative to this script
+  exec $exe "$@"
+else
+  # This will be substituted by the build and postinst in IHSROOT/build/
+  exec libtoolexe "$@"
+fi
