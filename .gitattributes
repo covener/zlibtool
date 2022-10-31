@@ -5,4 +5,4 @@
 .gitignore zos-working-tree-encoding=iso8859-1
 
 
-README.md  zos-working-tree-encoding=iso8859-1
+*.md zos-working-tree-encoding=iso8859-1
