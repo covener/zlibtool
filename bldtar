@@ -1,7 +1,7 @@
 #!/bin/sh
 PLATFORM=`uname -s`
 
-FIX=1
+FIX=2
 if test -d libtool ; then
     if [ $PLATFORM = "OS/390" ] ; then
       # z/OS uses -z not -Z and doesn't exclude well so the tarball will have a few extra things in it
