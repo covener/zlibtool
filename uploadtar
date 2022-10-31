@@ -1,0 +1,3 @@
+#!/bin/sh
+
+printf "cd /m0xa/IHS/buildtools/z\nput libtool-zOS-httpd-2.4-fix1.tar.Z"| sftp -b - covener@apache.rtp.raleigh.ibm.com
