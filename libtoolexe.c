@@ -1673,6 +1673,7 @@ static int buildArchive(Parms_t *p)
     rc = symlink(oldPath, newPath);
     if (rc && errno != EEXIST)
     {
+      fprintf(debugf,"error symlinking %s to %s\n", oldPath, newPath);
       perror("libtoolexe: buildArchive: symlink");
       exit(rc);
     }
