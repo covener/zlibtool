@@ -1,3 +1,7 @@
+## Changes with zlibtool 1.4.0-fix3
+
+- Use tar -S to preserve file tags and encodings.
+
 ## Changes with zlibtool 1.4.0-fix2
 
 - When linking a shared library foo/bar/baz.la, use .libs/baz.a not .libs/foo/bar/baz.a
