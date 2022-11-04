@@ -1664,7 +1664,7 @@ static int buildArchive(Parms_t *p)
   /* now add a .libs directory, and create a symlink in it to foo.a */
   if (!rc)
   {
-    char oldPath[260], newPath[260], tmpName[260];
+    char oldPath[260], newPath[260];
     char buf[BUF_SIZE] = "";
     char *basename = NULL;
     char *dirname = NULL;
@@ -1687,15 +1687,12 @@ static int buildArchive(Parms_t *p)
       exit(rc);
     }
 
-    /* Check for absolute or relative directory */
-    if (*archiveName == '0') {
+    /* Check for absolute or relative directory. This first check was busted for a long time and was never taken. 
+     * This is likely added for building the WAS Plug-in on z/OS.
+     */
+    if (*archiveName == '/') { 
       oldPath[0] = '\0';
       strcat(oldPath, archiveName);
-      strcat(newPath, archiveName);
-      slashPos = strrchr(newPath, '/');
-      strcpy(tmpName, slashPos); 
-      *slashPos = '\0';
-      strcat(newPath, "/.libs/");
     } else {
       strcpy(oldPath, "../");
       strcat(oldPath, basename);
