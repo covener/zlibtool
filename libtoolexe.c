@@ -1463,7 +1463,9 @@ static int compile(Parms_t *p)
        * This argument is silently ignored by cc if added after the input .c file,
        * so that is why we're adding it here instead of where we add -fPIC on BeOS.
        */
-      addArg(&c, "-Wc,DLL,EXPORTALL ");
+      if (strstr("ibm-clang", p->args[0].s) == NULL) { 
+          addArg(&c, "-Wc,DLL,EXPORTALL ");
+      }
     }
 #endif
 
