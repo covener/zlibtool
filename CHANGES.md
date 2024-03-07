@@ -1,3 +1,7 @@
+## Changes with zlibtool 1.5.0
+
+- Avoid -Wl,DLL with the compiler is ibm-clang
+
 ## Changes with zlibtool 1.4.0-fix3
 
 - Use tar -S to preserve file tags and encodings.
