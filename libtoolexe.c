@@ -1072,7 +1072,10 @@ static int shlibtoolLink(Parms_t *p)
   addArg(&c," ");
   ++curArg;
 
-  addArg(&c,"-Wl,DLL ");
+  if (strstr("ibm-clang", p->args[0].s) == NULL) { 
+      /* This is an xlc-ism that needs no replacement in ibm-clang */
+      addArg(&c,"-Wl,DLL ");
+  }
   addArg(&c,"-o ");
   addArg(&c,intendedSo);
   addArg(&c," ");
@@ -1219,7 +1222,11 @@ static int buildMain(Parms_t *p)
   ++curArg;
 
   /* apachecore */
-  addArg(&c,"-Wl,DLL ");
+  if (strstr("ibm-clang", p->args[0].s) == NULL) { 
+      /* This is an xlc-ism that needs no replacement in ibm-clang */
+      addArg(&c,"-Wl,DLL ");
+  }
+
   addArg(&c,"-o ");
   addArg(&c,p->core_dll);
   addArg(&c," ");
