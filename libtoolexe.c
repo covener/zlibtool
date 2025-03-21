@@ -92,10 +92,11 @@ typedef struct
   char *prefix;
   char *staticLib;
   char *sharedLib;
-  char *shLink; /* what we need to pass on the link line... */
+  char *shLink; /* what we need to pass on the link line. Overridden by dlname if present*/
   int installed;
   char *installPath;
   int linkShared;
+  char *dlname; /* https://www.gnu.org/software/libtool/manual/html_node/Finding-the-dlname.html */
 } Larchive_t;
 
 typedef struct
@@ -141,6 +142,7 @@ typedef struct Parms_t
   const char *lt_target;
   const char *rpath;
   const char *version;
+  const char *release; /* passed on link */
   enum {COMPILE=3, LINK, SHOWVERSION, INSTALL, UNKNOWN_MODE} mode;
   enum {OUTPUT_IS_OBJ=9, OUTPUT_IS_ARCHIVE, OUTPUT_IS_EXE, UNKNOWN_OUTPUT} outputType;
   Arg_t args[MAX_ARGS];
@@ -434,8 +436,7 @@ static void _addArg(Cmdline_t *c,const char *add, int escape)
   size_t addLen;
 
   if (debug >= DEBUG_GORY_DETAILS)
-    fprintf(stderr, "_addArg(,%s,%d)\n",
-            add, escape);
+    fprintf(debugf, "_addArg(c,'%s',%d)\n", add, escape);
 
   if (escape)
     add = escapeArg(add);
@@ -511,7 +512,7 @@ static void addXfiles(Parms_t *p, Cmdline_t *c,const char *larchd)
           xname = strdup(entry->d_name); 
          if (!strncmp(xname+strlen(xname)-2, ".x", 2)) {
               if (debug >= DEBUG_GORY_DETAILS)
-                fprintf(stderr, " adding x file %s from a directory with -L\n",xname); 
+                fprintf(debugf, " adding x file %s from a directory with -L\n",xname); 
               strcpy(buf, '\0');
               strcpy(buf, larchd);
               strcat(buf, "/");
@@ -636,6 +637,7 @@ static void dumpLarchive(Larchive_t *la)
   fprintf(debugf,"\tshared library : %s\n", la->sharedLib ? la->sharedLib : "(none)");
   fprintf(debugf,"\tinstalled      : %s\n", la->installed ? "yes" : "no");
   fprintf(debugf,"\tinstall path   : %s\n", la->installPath);
+  fprintf(debugf,"\tdlname         : %s\n", la->dlname);
 }
 
 static int isLarchiveStatic(Larchive_t *la)
@@ -705,6 +707,7 @@ static void readLarchive(Larchive_t *la, const char *fname, int must_exist)
         if (inputline[0] == '#' || inputline[0] == '\0') {
           continue;
         }
+        if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf, "readLarchive: input line '%s'\n", inputline);
         if (strstr(inputline,"library_names")){
             parm = _getstrdata(inputline);
             if (parm) {
@@ -714,6 +717,15 @@ static void readLarchive(Larchive_t *la, const char *fname, int must_exist)
             }
             continue;
         }
+        if (strstr(inputline,"dlname")){
+            if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf, "readLarchive: input line '%s' match dlname\n", inputline);
+            parm = _getstrdata(inputline);
+            if (parm) {
+                la->dlname= strdup(parm);
+            }
+            continue;
+        }
+
         if (strstr(inputline,"old_library")) {
             parm = _getstrdata(inputline);
             if (parm) {
@@ -778,7 +790,12 @@ static void readLarchive(Larchive_t *la, const char *fname, int must_exist)
     fclose(in);
   }
 
+  if (la->dlname) { 
+    la->shLink = la->dlname;
+  }
+
   free(inputline); 
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf, "readLarchive: done\n");
 }
 
 static void writeLarchive(Larchive_t *la)
@@ -803,11 +820,11 @@ static void writeLarchive(Larchive_t *la)
   
   fprintf(lafile, 
           "# The name that we can dlopen() or dllload() or whatever.\n"
-          "dlname='%s'\n\n", la->sharedLib ? la->sharedLib : "");
+          "dlname='%s'\n\n", la->dlname? la->dlname: "");
   fprintf(lafile, 
-      "# Names of this library.\n"
-      "library_names='%s'\n"
-      "\n", la->sharedLib ? la->sharedLib : "");
+          "# Names of this library.\n"
+          "library_names='%s'\n"
+          "\n", la->sharedLib ? la->sharedLib : "");
   fprintf(lafile, 
       "# The name of the static archive.\n"
       "old_library='%s'\n"
@@ -967,7 +984,7 @@ static void addLarchive(Cmdline_t *c,Arg_t *a, Parms_t *p)
     char curname[1024];
 
     if (debug >= DEBUG_GORY_DETAILS)
-      fprintf(stderr,
+      fprintf(debugf,
               "building main executable + special dll\n");
 
     dirPrefix = getDirPrefix(a->s);
@@ -1059,13 +1076,24 @@ static int shlibtoolLink(Parms_t *p)
   int len = 0;
   char *tmp = NULL;
 
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf, "shlibtoolLink target %s\n", p->target);
+
   /* turn foo.la into foo.so to create the archive name */
   readLarchive(&larch, p->target, 0);
+
+  dumpLarchive(&larch); 
+
   archiveName = strdup(p->target);
-  strcpy(intendedSo + strlen(intendedSo) - 3,".so"); 
+  if (larch.dlname) { 
+      intendedSo = larch.dlname;
+  }
+  else { 
+      strcpy(intendedSo + strlen(intendedSo) - 3,".so"); 
+  }
 
   removeFile(intendedSo,1);
 
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf, "shlibtoolLink intendedSo '%s'\n", intendedSo);
   curArg = 0;
 #if OS390_BUILD
   addArg(&c,p->args[curArg].s);
@@ -1564,6 +1592,7 @@ static int buildArchive(Parms_t *p)
   Larchive_t larch;
 
   /* turn foo.la into foo.a to create the archive name */
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: read from %s\n", p->target);
   readLarchive(&larch, p->target, 0);
   archiveName = strdup(p->target);
   strcpy(archiveName + strlen(archiveName) - 3,".a"); 
@@ -1590,6 +1619,7 @@ static int buildArchive(Parms_t *p)
     runCmd(p,&cp);
   }
 
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: build AR cli\n");
   /* build ar command-line */
   addArg(&c,AR_ADD_WITH_REPLACE);
   addArg(&c,archiveName);
@@ -1635,18 +1665,21 @@ static int buildArchive(Parms_t *p)
         break;        
       case INPUT_IS_OBJ:
       case INPUT_IS_LOBJ:
+        if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: read from %s\n", p->target);
         /* Whoops, you've probably got a loop in whatever generates input: in the .la */
         assert(larch.numInputs < sizeof larch.inputs / sizeof larch.inputs[0]);
         larch.inputs[larch.numInputs] = strdup(p->args[curArg].realInput);
         ++larch.numInputs;
 
         if (! use_subdir){
+            if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: handle realInput '%s'\n", p->args[curArg].realInput);
           addArg(&c,p->args[curArg].realInput);
           addArg(&c," ");
         } else {
 /* This shoulodn't really be needed here...
           if (p->args[curArg].realInput != NULL){
 */
+            if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: handle realInput '%s'\n", p->args[curArg].realInput);
             addArg(&cmd, "cp ");
             addArg(&cmd, p->args[curArg].realInput);
             addArg(&cmd, " .tmp");
@@ -1665,7 +1698,9 @@ static int buildArchive(Parms_t *p)
   if (use_subdir)
     addArgUnescaped(&c, ".tmp/*.o");
     
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: runCmd 1\n");
   rc = runCmd(p,&c);
+  if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: runCmd 1... back\n");
 
   if (use_subdir){
     Cmdline_t rmv = {0};
@@ -1723,8 +1758,18 @@ static int buildArchive(Parms_t *p)
   
   if (!rc)
   {
+    if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: set static lib and installpath target '%s'\n", p->target);
     larch.staticLib = strdup(archiveName);
     larch.installPath = strdup(p->rpath);
+    if (p->release) { 
+    if (debug >= DEBUG_GORY_DETAILS) fprintf(debugf,"buildArchive: release is %s\n", p->release);
+      larch.dlname = malloc(strlen(larch.staticLib) + 2 + 1 + strlen(p->release)); /* null, .a->.so, -, release */
+      strcpy(larch.dlname, larch.staticLib);
+      larch.sharedLib = larch.dlname;
+      sprintf(larch.dlname + strlen(larch.staticLib) - 2,"-%s.so",p->release);
+    }
+
+    dumpLarchive(&larch);
     writeLarchive(&larch);
   }
 
@@ -1814,6 +1859,11 @@ static int parseCmdline(int argc,char **argv,Parms_t *p)
 #if BEOS_BUILD /* keep from messing up BeOS...  but fix the mm build first */
        p->fromShlibtool = 1;
 #endif
+    }
+    else if (!strcmp(argv[curArg],"-release"))
+    {
+      ++curArg;
+      p->release = argv[curArg];
     }
     else if (!strcmp(argv[curArg],"-version-info"))
     {
@@ -2098,34 +2148,32 @@ static void updateFnameForInstall(Larchive_t *la)
   /*
    * note: when called to install a library like
    *            libtoolexe --mode=install libapr.la /my/path/to/libs
-   *       the sharedLib field may not be set and we'll need to use the
+   *       the sharedLib field (library_names)  may not be set and we'll need to use the
    *       fname field as the library name
    */
   char *old_sharedLib = la->sharedLib;
+  char *basefname = mybasename(la->fname);
 
   if (!la->sharedLib) {
+    if (debug >= DEBUG_GORY_DETAILS) fprintf(stderr, "updateFnameForInstall: no shared lib in %s\n", la->fname);
     la->sharedLib = la->fname;
   }
   /* a little bigger than necessary, but who wants to bother omitting the bytes for
    * the file extension of la->sharedLib?
    */
   la->fname = (char *)malloc(
-    strlen(la->installPath) + strlen("/") + strlen(la->sharedLib) + strlen(".la") + 1);
+    strlen(la->installPath) + strlen("/") + strlen(basefname) + 1);
   strcpy(la->fname, la->installPath);
   if (la->fname[strlen(la->fname) - 1] != '/') {
     strcat(la->fname, "/");
   }
-  strcat(la->fname, la->sharedLib);
-  /* now, replace file extension of path we just built with ".la" */
-  dotPos = strrchr(la->fname, '.');
-  if (!dotPos) {
-    fprintf(stderr, "about to die; can't find dot in '%s'\n", la->fname);
-    dumpLarchive(la); 
-    assert(dotPos);
-  }
-  strcpy(dotPos, ".la");
-  if (debug >= DEBUG_GORY_DETAILS)
+  strcat(la->fname, basefname);
+
+  if (debug >= DEBUG_GORY_DETAILS) {
+    fprintf(stderr, "updateFnameForInstall: dump archive\n");
     dumpLarchive(la);
+  }
+
   la->sharedLib = old_sharedLib;
 }
 
@@ -2178,6 +2226,9 @@ static int install(Parms_t *p)
    * then install the .so and/or .a it references
    */
   if (p->args[s].inputType == INPUT_IS_LARCHIVE) {
+    if (debug >= DEBUG_GORY_DETAILS) {
+        fprintf(stderr, "install: read archive '%s'\n", src);
+    }
     readLarchive(&la, src, 1);
     if (!dstdir) {
       dstdir = getDir(dst);
@@ -2185,6 +2236,7 @@ static int install(Parms_t *p)
     la.installPath = strdup(dstdir);
     la.installed = 1;
     updateFnameForInstall(&la);
+
     writeLarchive(&la);
     
     /* install the .so if any */    

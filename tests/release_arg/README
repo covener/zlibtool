@@ -1,0 +1,5 @@
+apr uses "stubs" for some optional dependencies (LDAP, DBD) and they pass " -release 2" on the link
+
+libtool --mode=link --tag=CC cc -Wc,-qcpluscmt -Wc,-qlanglvl=extc99 -Wc,-qhaltonmsg=CCN3280 -Wc,-qhaltonmsg=CCN3296 -Wc,XPLINK,lp64,dll,expo -Wl,XPLINK,lp64 -O3 -Wc,-qstrict -release 2 -module -rpath /u/covener/SRC/apr-trunk/built/lib/apr-2 -o ldap/apr_ldap.la
+
+
