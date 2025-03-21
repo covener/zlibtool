@@ -1,3 +1,7 @@
+## Unreleased changes
+
+- add support for `-release X` as used by APU stubs.
+
 ## Changes with zlibtool 1.5.0
 
 - Avoid -Wl,DLL with the compiler is ibm-clang
