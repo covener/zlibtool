@@ -34,4 +34,5 @@ Bugs:
 
 1. Use the technique in https://community.ibm.com/community/user/ibmz-and-linuxone/blogs/kai-nacke/2025/02/20/building-shared-libraries-with-ibm-openxl?communityKey=5805da79-8284-4015-97fb-5a19f6480452
    where .x files are added to .a files to allow simply -lfoo to work. Author says it works with xlc too.
+   - https://www.ibm.com/docs/en/zos/3.1.0?topic=references-autocall-archive-libraries
 2. remove BEOS
